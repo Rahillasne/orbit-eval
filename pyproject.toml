@@ -1,0 +1,49 @@
+[build-system]
+# >=61 is needed for PEP 621 metadata; <80 avoids setuptools' develop-command
+# delegation to `pip install --use-pep517`, which breaks editable installs
+# inside pip<=21's isolated build env (stock macOS toolchain).
+requires = ["setuptools>=61,<80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orbit-eval"
+version = "0.8.1"
+description = "Honest statistics for robot-policy evaluation: CRN-paired checkpoint comparisons vs retrain-level method comparisons, shipping the measured ORBIT noise atlas."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "ORBIT Research" }]
+dependencies = []
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://orbiteval.com"
+Repository = "https://github.com/Rahillasne/orbit-eval"
+Issues = "https://github.com/Rahillasne/orbit-eval/issues"
+
+[project.scripts]
+orbit-eval = "orbit_eval.cli:main"
+orbit-shipgate = "orbit_eval.gate.cli:main"
+
+[tool.setuptools]
+packages = ["orbit_eval", "orbit_eval.gate"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: heavy seeded calibration simulations (deterministic; still part of the default suite)",
+]

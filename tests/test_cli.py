@@ -1,0 +1,272 @@
+"""End-to-end CLI behaviour: compare regimes, regress exit codes, power text."""
+
+import contextlib
+import io as _io
+import json
+import os
+import random
+import shutil
+import tempfile
+import unittest
+
+from orbit_eval import cli
+
+FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+def _run(argv):
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        code = cli.main(argv)
+    return code, buf.getvalue()
+
+
+def _eval_info(successes, seed=1000):
+    n = len(successes)
+    return {
+        "per_task": [{"task_group": "pusht", "task_id": 0, "metrics": {
+            "sum_rewards": [0.0] * n, "max_rewards": [0.0] * n,
+            "successes": [bool(s) for s in successes], "video_paths": []}}],
+        "overall": {"pc_success": 100.0 * sum(successes) / n,
+                    "n_episodes": n},
+        "seed": seed,
+    }
+
+
+class TestCompareCLI(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="orbit_eval_cli_")
+        rng = random.Random(5)
+        self.sa, self.sb = [], []
+        for _ in range(500):
+            u = rng.random()
+            self.sa.append(u < 0.55)
+            self.sb.append(u < 0.45)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, name, obj):
+        p = os.path.join(self.tmp, name)
+        with open(p, "w") as fh:
+            json.dump(obj, fh)
+        return p
+
+    def test_crn_paired_compare(self):
+        a = self._write("a_eval_info.json", _eval_info(self.sa))
+        b = self._write("b_eval_info.json", _eval_info(self.sb))
+        code, out = _run(["compare", a, b])
+        self.assertEqual(code, 0)
+        self.assertIn("CRN-PAIRED", out)
+        self.assertIn("McNemar", out)
+        self.assertIn("WHICH QUESTION IS THIS?", out)
+        self.assertIn("CANNOT answer (b)", out)
+        self.assertIn("VALIDATED 2026-08-02", out)  # pairing-validated provenance
+
+    def test_unpaired_on_seed_mismatch(self):
+        a = self._write("a_eval_info.json", _eval_info(self.sa, seed=0))
+        b = self._write("b_eval_info.json", _eval_info(self.sb, seed=1))
+        code, out = _run(["compare", a, b])
+        self.assertEqual(code, 0)
+        self.assertIn("UNPAIRED", out)
+        self.assertIn("CRN pairing", out)
+
+    def test_compare_real_orbit_records_blocks_on_nothing(self):
+        # two real single-run files from the paired wave (no per-episode data)
+        recs = json.load(open(os.path.join(FIX, "paired1_results.json")))
+        a = self._write("a.model_result.json",
+                        [r for r in recs if r["mask_id"] == "p_b0_m0"][0])
+        b = self._write("b.model_result.json",
+                        [r for r in recs if r["mask_id"] == "p_b1_m0"][0])
+        code, out = _run(["compare", a, b])
+        self.assertEqual(code, 0)
+        self.assertIn("UNPAIRED", out)
+
+    def test_truncated_run_is_rejected(self):
+        recs = json.load(open(os.path.join(FIX, "paired1_results.json")))
+        bad = dict([r for r in recs if r["mask_id"] == "p_b0_m0"][0])
+        bad["final_step"] = 35000            # the OPS_RUNBOOK sec 3 defect
+        a = self._write("bad.model_result.json", bad)
+        b = self._write("ok.model_result.json",
+                        [r for r in recs if r["mask_id"] == "p_b1_m0"][0])
+        code, out = _run(["compare", a, b])
+        self.assertEqual(code, 2)
+        self.assertIn("INVALID", out)
+        self.assertIn("directional", out)
+
+
+class TestRegressCLI(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="orbit_eval_reg_")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _pair(self, n, p_base, drop_pp, seed=1000, seed_b=None):
+        """CRN-style pair: candidate loses drop_pp of episodes one-sidedly."""
+        rng = random.Random(9)
+        sa, sb = [], []
+        p_cand = p_base - drop_pp / 100.0
+        for _ in range(n):
+            u = rng.random()
+            sa.append(u < p_base)
+            sb.append(u < p_cand)
+        pa = os.path.join(self.tmp, "base_eval_info.json")
+        pb = os.path.join(self.tmp, "cand_eval_info.json")
+        json.dump(_eval_info(sa, seed), open(pa, "w"))
+        json.dump(_eval_info(sb, seed if seed_b is None else seed_b),
+                  open(pb, "w"))
+        return pa, pb
+
+    def test_exit_1_on_regression(self):
+        a, b = self._pair(500, 0.60, 20.0)
+        code, out = _run(["regress", a, b, "--regime", "smolvla-ft"])
+        self.assertEqual(code, 1)
+        self.assertIn("REGRESSION", out)
+
+    def test_exit_0_no_regression(self):
+        a, b = self._pair(500, 0.60, 0.0)
+        code, out = _run(["regress", a, b, "--regime", "smolvla-ft"])
+        self.assertEqual(code, 0)
+        self.assertIn("no regression", out)
+
+    def test_exit_3_underpowered(self):
+        # different eval seeds -> UNPAIRED; 50 episodes/arm cannot certify a
+        # ~6.6 pp gate (unpaired MDE ~ 28 pp at p~.5). Exit 3, NOT 2: a CI
+        # consumer must distinguish "inputs unusable" (2) from "design too
+        # weak — collect more" (3, the shipgate COLLECT-MORE convention).
+        a, b = self._pair(50, 0.50, 0.0, seed=0, seed_b=1)
+        code, out = _run(["regress", a, b, "--regime", "smolvla-ft"])
+        self.assertEqual(code, 3)
+        self.assertIn("UNDERPOWERED", out)
+
+    def test_exit_2_unknown_regime_clean_error(self):
+        # a typo'd --regime must print the available regimes and exit 2,
+        # never crash with a raw KeyError traceback (mirrors cmd_power)
+        a, b = self._pair(500, 0.60, 0.0)
+        code, out = _run(["regress", a, b, "--regime", "typo"])
+        self.assertEqual(code, 2)
+        self.assertIn("unknown regime", out)
+        self.assertIn("smolvla-ft", out)     # lists the available names
+
+    def test_exit_2_invalid_inputs(self):
+        rec = {"mask_id": "x", "sr": 30.0, "n_eval": 500, "seed": 0,
+               "final_step": 35000, "design_steps": 100000}
+        pa = os.path.join(self.tmp, "bad.model_result.json")
+        json.dump(rec, open(pa, "w"))
+        ok = dict(rec, final_step=100000, mask_id="y")
+        pb = os.path.join(self.tmp, "ok.model_result.json")
+        json.dump(ok, open(pb, "w"))
+        code, out = _run(["regress", pa, pb])
+        self.assertEqual(code, 2)
+        self.assertIn("INVALID", out)
+
+    def test_gate_override(self):
+        a, b = self._pair(500, 0.60, 20.0)
+        # an absurdly high gate turns the same 20 pp drop into a pass
+        code, _ = _run(["regress", a, b, "--gate", "40",
+                        "--regime", "smolvla-ft"])
+        self.assertEqual(code, 0)
+
+    def test_paired_regress_prints_caveats_and_banner(self):
+        # the CI gate is where an unqualified green light gets trusted: a
+        # paired regress must carry the pairing-validated provenance and the
+        # (a)/(b) fixed-set-vs-method banner
+        a, b = self._pair(500, 0.60, 0.0)
+        code, out = _run(["regress", a, b, "--regime", "smolvla-ft"])
+        self.assertEqual(code, 0)
+        self.assertIn("CAVEAT", out)
+        self.assertIn("VALIDATED 2026-08-02", out)      # pairing-validated
+        self.assertIn("WHICH QUESTION IS THIS?", out)
+        self.assertIn("CANNOT answer (b)", out)
+
+    def test_default_gate_names_its_atlas_regime(self):
+        a, b = self._pair(500, 0.60, 0.0)
+        code, out = _run(["regress", a, b])
+        self.assertEqual(code, 0)
+        self.assertIn("smolvla-ft", out)           # provenance of the 3.31
+        self.assertIn("if your stack differs", out)
+
+    def test_regress_json(self):
+        a, b = self._pair(500, 0.60, 20.0)
+        code, out = _run(["regress", a, b, "--regime", "smolvla-ft",
+                          "--json"])
+        self.assertEqual(code, 1)
+        rep = json.loads(out)
+        self.assertEqual(rep["verdict"], "REGRESSION")
+        self.assertEqual(rep["exit"], 1)
+        self.assertIn("gate_pp", rep)
+        self.assertIn("mde_hat_pp", rep)
+
+
+class TestPowerCLI(unittest.TestCase):
+    def test_fixed_set(self):
+        code, out = _run(["power", "--regime", "pusht-dp", "--effect", "5"])
+        self.assertEqual(code, 0)
+        self.assertIn("sigma_run = 2.09", out)
+        self.assertIn("3 draws per arm", out)      # hand-checked table value
+        self.assertIn("FIXED-SET", out)
+
+    def test_method_arms_59(self):
+        code, out = _run(["power", "--regime", "smolvla-ft",
+                          "--effect", "10", "--arms", "method"])
+        self.assertEqual(code, 0)
+        self.assertIn("59 set draws per arm", out)
+        self.assertIn("CRN pairing cannot rescue", out)
+        self.assertIn("19.30", out)               # sqrt(19.01^2+3.31^2)
+
+    def test_audit_cli_json(self):
+        tmp = tempfile.mkdtemp(prefix="orbit_eval_audj_")
+        try:
+            p = os.path.join(tmp, "r", "model_result.json")
+            os.makedirs(os.path.dirname(p))
+            json.dump({"mask_id": "r", "sr": 50.0, "n_eval": 50, "seed": 1000,
+                       "final_step": 100000, "design_steps": 100000},
+                      open(p, "w"))
+            code, out = _run(["audit", tmp, "--json"])
+            self.assertEqual(code, 1)              # flags found
+            rep = json.loads(out)
+            codes = {f["code"] for f in rep["flags"]}
+            self.assertEqual(codes, {"SEED_DEFAULT_1000", "TINY_N"})
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_audit_nonexistent_path_exits_2(self):
+        # a typo'd path in CI must NOT produce a clean bill of health
+        code, out = _run(["audit", "/no/such/dir/orbit_eval_xyz"])
+        self.assertEqual(code, 2)
+        self.assertIn("not a directory", out)
+
+    def test_audit_empty_dir_exits_2(self):
+        tmp = tempfile.mkdtemp(prefix="orbit_eval_empty_")
+        try:
+            code, out = _run(["audit", tmp])
+            self.assertEqual(code, 2)
+            self.assertIn("no recognisable result files", out)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_compare_json(self):
+        tmp = tempfile.mkdtemp(prefix="orbit_eval_cmpj_")
+        try:
+            rng = random.Random(5)
+            sa, sb = [], []
+            for _ in range(200):
+                u = rng.random()
+                sa.append(u < 0.55)
+                sb.append(u < 0.45)
+            pa = os.path.join(tmp, "a_eval_info.json")
+            pb = os.path.join(tmp, "b_eval_info.json")
+            json.dump(_eval_info(sa), open(pa, "w"))
+            json.dump(_eval_info(sb), open(pb, "w"))
+            code, out = _run(["compare", pa, pb, "--json"])
+            self.assertEqual(code, 0)
+            rep = json.loads(out)
+            self.assertTrue(rep["paired"])
+            self.assertIn("p_mcnemar", rep)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

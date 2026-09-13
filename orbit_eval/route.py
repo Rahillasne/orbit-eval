@@ -1,18 +1,17 @@
 # orbit-eval — honest statistics for robot-policy evaluation.
-# Copyright (C) 2026 ORBIT Research
+# Copyright 2026 ORBIT Research
 #
-# This program is free software: you can redistribute it and/or modify it under
-# the terms of the GNU Affero General Public License, version 3, as published by
-# the Free Software Foundation.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# This program is distributed in the hope that it will be useful, but WITHOUT ANY
-# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-# PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
-# You should have received a copy of the license along with this program. If not,
-# see <https://www.gnu.org/licenses/>.
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-# A commercial license, exempting you from the AGPL's source-disclosure terms, is
-# available from ORBIT Research.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """orbit-eval route — task-conditioned release selection over candidate checkpoints.
 
@@ -157,15 +156,20 @@ def _load_csv(path):
                 return cols[n]
         return None
 
-    c_cand = pick("candidate", "checkpoint", "model", "policy", "run")
-    c_task = pick("task", "task_id", "sku", "skill")
-    c_ep = pick("episode", "episode_id", "ep", "trial")
-    c_ok = pick("success", "ok", "outcome", "succeeded")
+    c_cand = pick("candidate", "checkpoint", "model", "policy", "run", "version", "release")
+    c_task = pick("task", "task_id", "sku", "skill", "task_name", "skill_name")
+    c_ep = pick("episode", "episode_id", "ep", "trial", "rollout", "attempt")
+    c_ok = pick("success", "ok", "outcome", "succeeded", "pass", "passed", "result")
     c_blk = pick("block", "robot", "robot_id", "day", "date", "cell", "site", "batch")
     if None in (c_cand, c_task, c_ep, c_ok):
-        raise ValueError("%s: need columns candidate,task,episode,success (got %s)"
-                         % (path, ", ".join(rows[0].keys())))
-    tmp, blk = {}, {}
+        raise ValueError(
+            "%s: need one column each for the model, the skill, the episode and the "
+            "outcome.\n  model:   candidate | checkpoint | model | policy | run | version | release"
+            "\n  skill:   task | task_id | sku | skill | task_name | skill_name"
+            "\n  episode: episode | episode_id | ep | trial | rollout | attempt"
+            "\n  outcome: success | ok | outcome | succeeded | pass | passed | result"
+            "\nfound: %s" % (path, ", ".join(str(k) for k in rows[0].keys())))
+    tmp, blk, dupes = {}, {}, []
     for r in rows:
         ok = _bool(r[c_ok], path)
         try:
@@ -173,17 +177,36 @@ def _load_csv(path):
         except (TypeError, ValueError):
             raise ValueError("%s: episode %r is not an integer" % (path, r[c_ep]))
         cand, task = str(r[c_cand]).strip(), str(r[c_task]).strip()
-        tmp.setdefault(cand, {}).setdefault(task, {})[ep] = ok
+        slot = tmp.setdefault(cand, {}).setdefault(task, {})
+        if ep in slot:
+            # Silently overwriting here loses episodes and reports the survivors as the
+            # whole sample: concatenated eval shards that each number episodes from 0
+            # are the common cause, and the loss is invisible in the output.
+            dupes.append((cand, task, ep))
+        slot[ep] = ok
         if c_blk is not None:
             blk.setdefault(cand, {}).setdefault(task, {})[ep] = str(r[c_blk]).strip()
+    if dupes:
+        shown = ", ".join("%s/%s episode %d" % d for d in dupes[:3])
+        raise ValueError(
+            "%s: %d duplicated (model, skill, episode) row(s), e.g. %s.\n"
+            "  Each episode must appear once per model. The usual cause is eval shards "
+            "concatenated\n  without renumbering, which would silently discard episodes "
+            "and report the survivors\n  as the whole sample. Renumber the episode column "
+            "to be unique within each (model, skill)."
+            % (path, len(dupes), shown))
     data, blocks = {}, {}
+    ep_ids = {}
     for cand, tasks in tmp.items():
         data[cand] = {}
+        ep_ids[cand] = {}
         for t, eps in tasks.items():
             order = sorted(eps)
             data[cand][t] = [eps[k] for k in order]          # episode index order = CRN position
+            ep_ids[cand][t] = order                          # kept: pairing must be checked
             if c_blk is not None:
                 blocks.setdefault(cand, {})[t] = [blk[cand][t][k] for k in order]
+    _load_csv.last_episode_ids = ep_ids
     return data, (blocks if c_blk is not None else None)
 
 
@@ -471,6 +494,7 @@ def split_half(data, draws=N_DRAWS, seed=RNG_SEED, z_abstain=Z_ABSTAIN,
     acc = {a: [] for a in ARMS}
     dmg = {a: [] for a in ARMS}
     worst = {a: [] for a in ARMS}
+    regr = {a: [] for a in ARMS}
     defects = []
     pool_full = {t: sum(_sr(data[k][t]) for k in keys) / J for t in tasks}
     labels = blocks or {}
@@ -516,6 +540,19 @@ def split_half(data, draws=N_DRAWS, seed=RNG_SEED, z_abstain=Z_ABSTAIN,
                 dl.append((d, d <= -(dmg_pp + z_dmg * se_t)))
             dmg[a].append(sum(1 for _d, flag in dl if flag))
             worst[a].append(min(d for d, _f in dl))
+            # The OTHER regression, the one a release engineer answers for: of the tasks
+            # this arm actually swapped away from the incumbent, did any land materially
+            # below the model it replaced on held-out episodes? Damage above is measured
+            # against the candidate POOL (a counterfactual the customer never ships);
+            # this is measured against the INCUMBENT (the model already in production).
+            sw = [t for t in tasks if chosen[a][t] != w[t]]
+            deltas = [ev[chosen[a][t]][t] - ev[w[t]][t] for t in sw]
+            regr[a].append({
+                "swapped": len(sw),
+                "any_5": any(d <= -5.0 for d in deltas),
+                "any_10": any(d <= -10.0 for d in deltas),
+                "worst": min(deltas) if deltas else 0.0,
+            })
 
     def ms(xs):
         m = sum(xs) / len(xs)
@@ -526,8 +563,13 @@ def split_half(data, draws=N_DRAWS, seed=RNG_SEED, z_abstain=Z_ABSTAIN,
            "stratified_by_block": bool(blocks)}
     for a in ARMS:
         m, s = ms(acc[a])
+        R = regr[a]
         out["arms"][a] = {"heldout_sr": m, "sem": s, "damaged_tasks": ms(dmg[a])[0],
-                          "worst_task_vs_pool": ms(worst[a])[0]}
+                          "worst_task_vs_pool": ms(worst[a])[0],
+                          "swapped_tasks": ms([r["swapped"] for r in R])[0],
+                          "p_any_swap_5pp_below_incumbent": ms([1.0 if r["any_5"] else 0.0 for r in R])[0],
+                          "p_any_swap_10pp_below_incumbent": ms([1.0 if r["any_10"] else 0.0 for r in R])[0],
+                          "worst_swap_vs_incumbent": ms([r["worst"] for r in R])[0]}
     out["defections_per_draw"] = ms(defects)[0]
     out["abstain_rate"] = 1.0 - ms(defects)[0] / T
     out["gain_route_abstain_vs_incumbent"] = (out["arms"]["ROUTE+ABSTAIN"]["heldout_sr"]
@@ -702,6 +744,25 @@ def format_build_report(rel, sh, meta, bud=None):
     L.append("ROUTE+ABSTAIN defects on %.2f of %d tasks per draw (abstain rate %.0f%%)."
              % (sh["defections_per_draw"], sh["T"], 100 * sh["abstain_rate"]))
     L.append("")
+    L.append("Two different regressions, and the abstention rule trades one against the other.")
+    L.append("The column above is measured against the candidate POOL — a counterfactual you")
+    L.append("never ship. This one is measured against the INCUMBENT, the model you are")
+    L.append("actually replacing, over the tasks each arm actually swapped:")
+    L.append("")
+    L.append("| arm | tasks swapped | P(any swap >=5pp below incumbent) | >=10pp | worst swap |")
+    L.append("|---|---|---|---|---|")
+    for a, r in sh["arms"].items():
+        if a in ("RANDOM", "ORACLE") or "swapped_tasks" not in r:
+            continue
+        L.append("| %s | %.2f | %.3f | %.3f | %+.2f pp |"
+                 % (a, r["swapped_tasks"], r["p_any_swap_5pp_below_incumbent"],
+                    r["p_any_swap_10pp_below_incumbent"], r["worst_swap_vs_incumbent"]))
+    L.append("")
+    L.append("Lowering the abstention threshold buys pool-damage and pays for it here. On the")
+    L.append("banked cells at J=3, turning abstention off cut damage-vs-pool but made")
+    L.append("P(any swap >=10pp below its incumbent) 14x to 48x worse. Abstention is not a")
+    L.append("tax on the gain; it is the guarantee that the release is not itself a lottery.")
+    L.append("")
     L.append("## Release table (decided on all episodes)")
     L.append("")
     hasb = bool(rel["blocks"])
@@ -766,8 +827,10 @@ def format_plan(pl):
                     r["route_minus_suite_at_nearest_budget_pp"], r["damaged_tasks_suite"], r["damaged_tasks_route"]))
     L.append("")
     L.append("  Below ~20 selection episodes/task the advantage was unreliable in every measured cell (ROUTE-1 B').")
-    L.append("  The gain is a property of YOUR cell, not of the method: on libero_spatial it was")
-    L.append("  +1.4 pp with zero inside the interval at 100 selection episodes/task.")
+    L.append("  The gain is a property of YOUR cell, not of the method. On the one cell where")
+    L.append("  it was checked and did NOT resolve — SmolVLA-ft / libero_spatial / k=88 / sim —")
+    L.append("  it read +1.7 pp, 95% CI [-2.1, +5.4] at 100 selection episodes/task, tracking")
+    L.append("  sigma_pertask (3.29 pp there vs 6.69 on libero_object, same wave).")
     L.append("")
     L.append("  REGRESSION RISK — P(>=1 task damaged vs your own retrain pool), measured cells nearest T=%d:" % pl["T"])
     for r in pl["regression_risk"]:
@@ -780,9 +843,10 @@ def format_plan(pl):
                  % (nv if nv else ">8", ("J=%d" % nb) if nb else "NEVER, at any J tested"))
     L.append("")
     L.append("  Read those two rows together: training more candidates and shipping the")
-    L.append("  best-validation one did not reduce regression risk at any pool size, and the")
-    L.append("  pool size that did grew with the task count. Constants are cell-local; the")
-    L.append("  shape is what is claimed to transfer (DAMAGE-J, declaration fb1c760f).")
+    L.append("  best-validation one reduced regression risk far less than per-task selection")
+    L.append("  at every pool size, and not at all in our 50-task cells; the pool size that")
+    L.append("  did work grew with the task count. Constants are cell-local; the shape is")
+    L.append("  what is claimed to transfer (DAMAGE-J, declaration fb1c760f).")
     return "\n".join(L)
 
 

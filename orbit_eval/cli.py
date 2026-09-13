@@ -1,18 +1,17 @@
 # orbit-eval — honest statistics for robot-policy evaluation.
-# Copyright (C) 2026 ORBIT Research
+# Copyright 2026 ORBIT Research
 #
-# This program is free software: you can redistribute it and/or modify it under
-# the terms of the GNU Affero General Public License, version 3, as published by
-# the Free Software Foundation.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# This program is distributed in the hope that it will be useful, but WITHOUT ANY
-# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-# PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
-# You should have received a copy of the license along with this program. If not,
-# see <https://www.gnu.org/licenses/>.
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-# A commercial license, exempting you from the AGPL's source-disclosure terms, is
-# available from ORBIT Research.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """orbit-eval — honest statistics for robot-policy evaluation.
 
@@ -32,6 +31,7 @@ import os
 import sys
 
 from . import __version__, atlas, audit, io, power, route, stats
+from . import release as release_mod
 
 
 # ------------------------------------------------------------------ audit
@@ -439,6 +439,69 @@ def cmd_route_build(args):
     return 0
 
 
+def cmd_release(args):
+    """Which of your skills did the new model break? One file in, one answer out."""
+    try:
+        data, versions = release_mod.load(args.log, args.order)
+    except (ValueError, OSError) as e:
+        print("orbit-eval release: %s" % e)
+        return 2
+    if not args.order and len(versions) >= 2 and not args.json:
+        print("  version order taken from the file, oldest first: %s"
+              % " -> ".join(versions))
+        print("  if that is backwards (a newest-first export reverses every comparison),")
+        print("  pass --order with the right sequence.\n")
+    if len(versions) < 2:
+        print("orbit-eval release: found %d version(s) in %s (%s).\n"
+              "  Two or more are needed: the model you run now, and the one you are "
+              "thinking of shipping." % (len(versions), args.log, ", ".join(versions)))
+        return 2
+
+    ids = getattr(route._load_csv, "last_episode_ids", None)
+    kw = {"drop_pp": args.drop_pp, "z_dmg": args.z_damage, "episode_ids": ids}
+    if len(versions) > 2 and not (args.incumbent and args.candidate):
+        h = release_mod.history(data, versions, **kw)
+        out = release_mod.format_history(h)
+        latest = release_mod.check(data, versions[-2], versions[-1], **kw)
+        out += "\n\n" + release_mod.format_check(latest)
+        payload = {"history": h, "latest": latest, "versions": versions}
+    else:
+        inc = args.incumbent or versions[-2]
+        cand = args.candidate or versions[-1]
+        for v in (inc, cand):
+            if v not in data:
+                print("orbit-eval release: no version %r in %s (present: %s)"
+                      % (v, args.log, ", ".join(sorted(data))))
+                return 2
+        c = release_mod.check(data, inc, cand, **kw)
+        out = release_mod.format_check(c)
+        payload = {"latest": c, "versions": versions}
+
+    payload["thresholds"] = {"drop_pp": args.drop_pp, "z_dmg": args.z_damage,
+                             "min_episodes": release_mod.MIN_EPISODES}
+    rec = release_mod.record(payload, ["release", args.log], inputs=[args.log])
+    if args.out:
+        with open(args.out, "w") as fh:
+            json.dump(rec, fh, indent=1)
+    if args.json:
+        print(json.dumps(rec, indent=1))
+    else:
+        print(out)
+        if args.out:
+            print("\n  signed record: %s" % args.out)
+    latest = payload["latest"]
+    # Exit codes a CI job can trust. 0 must mean "checked, and nothing broke".
+    if latest["all_underpowered"]:
+        return 3                      # could not judge; matches `regress`'s underpowered code
+    if latest["n_regressed"] or latest["skills_dropped"]:
+        return 1
+    if latest["n_underpowered"]:
+        # A skill was never judged. Exiting 0 here asserts it was checked and
+        # passed, which is the one claim this tool exists to refuse to make.
+        return 3
+    return 0
+
+
 def cmd_route_plan(args):
     pl = route.plan(args.candidates, args.tasks, args.select_eps, p=args.rate,
                     z_abstain=args.z_abstain)
@@ -459,6 +522,23 @@ def build_parser():
     ap.add_argument("--version", action="version",
                     version="orbit-eval %s" % __version__)
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    rel = sub.add_parser("release", help="which of your skills did the new model "
+                                         "break? (start here)")
+    rel.add_argument("log", help="episode-level CSV/TSV: version,skill,episode,success "
+                                 "(column names are auto-detected)")
+    rel.add_argument("--incumbent", help="the version you run now (default: second newest)")
+    rel.add_argument("--candidate", help="the version you are thinking of shipping "
+                                         "(default: newest)")
+    rel.add_argument("--order", help="comma-separated version order, oldest first, when "
+                                     "the file order is not chronological")
+    rel.add_argument("--drop-pp", type=float, default=release_mod.DROP_PP,
+                     help="a skill must fall at least this far to count (default 5.0)")
+    rel.add_argument("--z-damage", type=float, default=release_mod.Z_DMG,
+                     help="...and at least this many standard errors (default 2.0)")
+    rel.add_argument("--out", help="write the signed record (JSON)")
+    rel.add_argument("--json", action="store_true")
+    rel.set_defaults(fn=cmd_release)
 
     a = sub.add_parser("audit", help="scan eval outputs for silent defects "
                                      "(exit 0 clean / 1 flags or parse "

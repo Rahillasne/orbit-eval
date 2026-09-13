@@ -111,6 +111,8 @@ orbit-eval regress <base> <cand>  # CI gate: exit 0 ok / 1 regression
                                   #   (the design cannot detect the gate —
                                   #    a different remediation than 2)
 orbit-eval selftest               # the tool verifies its own size/power/bias
+orbit-eval release <log.csv>      # which skills did the new model break? (exit
+                                  #   0 clean / 1 regressed / 3 cannot answer)
 orbit-eval route build <cands>    # task-conditioned release over candidate
                                   #   checkpoints, with abstention (exit 0 /
                                   #   2 invalid inputs)
@@ -155,16 +157,58 @@ set (`sigma_run`); `--arms method` prices independent set draws
 single-task regime; the price is k-dependent and falls to ~3–4 draws/arm at
 k≥88 on a multi-task pool) and prints the honesty note.
 
+### `release` — which of your skills did the new model break?
+
+**Start here.** One command, on an evaluation log you already have.
+
+```bash
+orbit-eval release evals.csv     # version,skill,episode,success (names auto-detected)
+```
+
+It compares the new model against the one it replaces, **per named skill**, and leads
+with the answer. A skill is `REGRESSED` only when the whole 95 % interval sits at or
+below −5 pp, so the verdict and the interval beside it can never disagree. A drop that
+clears the floor but not the interval is `SUSPECT`. A skill with fewer than 10 episodes
+is `UNDERPOWERED`: not judged, and explicitly **not** a pass.
+
+Exit codes are meant for CI: `0` checked and clean, `1` a skill regressed or vanished
+from the new model, `3` the file could not answer the question, `2` unusable input.
+
+Why per skill and not the suite average: on a 50-task suite a best-validation release
+damaged at least one task in 100 % of measured draws while the suite mean got three
+times steadier (`research/cleanrel50/`). An average over many skills absorbs one
+collapse, and it gets *steadier* as you add skills, not more sensitive.
+
+With three or more versions it reads release history and answers the question a
+deployer can act on: how many of your last N releases broke a skill, and how many of
+those had a suite average that held or improved.
+
 ### `route` — the release step, measured
 
-`cp checkpoint_final prod/` is where 5–18 pp of success rate were being thrown
-away in every cell we measured. Eight identical-recipe retrains, same data,
-same eval: ship one at random 62.3 %; ship the best-validation one 68.3 %; ship
-a **task-conditioned** choice over the same eight 73.9 %, with damaged tasks
+`cp checkpoint_final prod/` leaves success rate on the table in some cells and
+not others. **How much is a measurement about your cell, never a rate to
+expect.** Where it paid: eight identical-recipe retrains, same data, same eval —
+ship one at random 62.3 %; ship the best-validation one 68.3 %; ship a
+**task-conditioned** choice over the same eight 73.9 %, with damaged tasks
 falling 1.82 → 0.22 (π₀.₅ / libero_object, held out on disjoint episodes;
-`research/ROUTE1_RESULTS_2026-08-29.md`). The same shape reproduced on
-Meta-World MT10 (+6.9 pp median, 3 replicates) and MT50 (+10 pp, damage
-probability 1.000 → ≤ 0.005 with abstention).
+`research/ROUTE1_RESULTS_2026-08-29.md`). The shape reproduced on Meta-World
+MT10 (+6.9 pp median, 3 replicates) and MT50 (+10 pp).
+
+Where it did not: on SmolVLA-ft / `libero_spatial` the same estimator reads
+**+1.7 pp, 95 % CI [−2.1, +5.4]** at 100 selection episodes per task — zero
+inside the interval — tracking σ_pertask (3.29 pp there against 6.69 on
+`libero_object`, same wave; `experiments/influence/route1_spatial_scope_check.py`).
+Routing pays in proportion to the per-task complementarity a cell actually has,
+and `plan` exists to tell you which case you are in before you spend anything.
+
+The claim that does travel is about the **tail**, not the mean. Shipping the
+best-validation retrain reduced the probability of a damaged task far less than
+per-task selection did at every pool size tested — and not at all on the 50-task
+pools, where it stayed at 1.000 from J=1 through J=8, while one ten-task
+replicate got *worse* with more candidates (0.786 → 0.929). Per-task selection
+with abstention cut it 3–8× at J=3 in every ten-task cell, and the pool size
+needed grew with the task count (`research/damage_jcurve/`, declaration
+`fb1c760f`).
 
 ```bash
 # candidates/<name>/**/eval_info.json (LeRobot), or a JSON matrix, or your own
@@ -181,7 +225,12 @@ What `build` decides and reports:
 - **per task**, the candidate that ships: the per-task winner only when its
   advantage over that task's incumbent clears one-sided z ≥ 1.645 on the
   selection episodes, otherwise **ABSTAIN** (keep the incumbent) — routing must
-  never itself be a lottery. `--incumbent` is one candidate, a
+  never itself be a lottery. Abstention is a deliberate trade and the report
+  prints both sides: never abstaining is the better arm against the candidate
+  *pool*, but it swaps far more of the fleet and makes a swap landing ≥ 10 pp
+  below the model it replaced 14× to 48× more likely across the banked cells at
+  J = 3. The default protects the incumbent; `--z-abstain 0` takes the other
+  side knowingly. `--incumbent` is one candidate, a
   `task=candidate,...` list, or a JSON/CSV mapping (`*` = default), because a
   fleet already runs different models per SKU;
 - the **held-out gain**: a stratified split-half over episodes (select on one
@@ -517,19 +566,16 @@ bootstrap/randomisation machinery, the self-test pattern), `power_paired.py`
 
 ## Licensing
 
-`orbit-eval` is released under the **GNU Affero General Public License, version 3
-(AGPL-3.0-only)** — see [`LICENSE`](LICENSE).
+`orbit-eval` is released under the **Apache License, Version 2.0** — see
+[`LICENSE`](LICENSE).
 
-In practice:
+Use it, ship it, embed it, modify it, build a product on top of it. There is no
+source-disclosure obligation, no separate commercial licence to negotiate, and
+the patent grant is explicit.
 
-- **Running it on your own checkpoints, inside your own company, costs nothing
-  and obliges you to nothing.** Internal use is not distribution. Point it at
-  your candidates, get your σ and your release build, keep everything private.
-- **If you modify it and offer it to others over a network** — an eval service, a
-  hosted release-gate, a product with this engine inside it — the AGPL requires
-  you to make your modified source available to those users.
-- A **commercial license**, exempting you from the source-disclosure terms, is
-  available from ORBIT Research.
+It was AGPL-3.0-only for versions 0.8.1 and 0.8.2. That licence obliged anyone
+offering a modified version over a network to publish their changes — which is
+precisely the adoption this tool needs and cannot buy. Relicensed at 0.8.3.
 
 The measurement corpus behind the shipped atlas — the replicate-retraining runs,
 the pre-registration record, and the per-cell variance estimates — is a separate

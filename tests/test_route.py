@@ -337,6 +337,40 @@ class TestCLI(unittest.TestCase):
                 if arm != "best_val":
                     self.assertLessEqual(vals[-1], vals[0] + 0.01, (name, arm))
 
+    def test_split_half_reports_incumbent_side_regression(self):
+        """Damage-vs-pool and regression-vs-incumbent are different quantities, and the
+        abstention rule trades one for the other. Both must be reported."""
+        data = {}
+        for c in ("a", "b", "c"):
+            data[c] = {}
+        rng = random.Random(11)
+        for t in range(6):
+            for i, c in enumerate(("a", "b", "c")):
+                # 'a' is the strong all-rounder (it becomes the incumbent); b and c each
+                # spike on one task and are worse elsewhere.
+                base = 0.70 if c == "a" else (0.85 if t == i else 0.45)
+                data[c][str(t)] = [rng.random() < base for _ in range(200)]
+        sh = route.split_half(data, draws=200)
+        for arm in ("ROUTE", "ROUTE+ABSTAIN"):
+            r = sh["arms"][arm]
+            for k in ("swapped_tasks", "p_any_swap_5pp_below_incumbent",
+                      "p_any_swap_10pp_below_incumbent", "worst_swap_vs_incumbent"):
+                self.assertIn(k, r, (arm, k))
+        # abstaining swaps strictly fewer tasks and carries strictly less incumbent risk
+        self.assertLess(sh["arms"]["ROUTE+ABSTAIN"]["swapped_tasks"],
+                        sh["arms"]["ROUTE"]["swapped_tasks"])
+        self.assertLessEqual(sh["arms"]["ROUTE+ABSTAIN"]["p_any_swap_10pp_below_incumbent"],
+                             sh["arms"]["ROUTE"]["p_any_swap_10pp_below_incumbent"])
+        # the INCUMBENT arm swaps nothing, by definition
+        self.assertEqual(sh["arms"]["INCUMBENT"]["swapped_tasks"], 0.0)
+
+    def test_build_report_shows_both_regressions(self):
+        code, rep = _run(["route", "build", self.js, "--draws", "40"])
+        self.assertEqual(code, 0, rep)
+        self.assertIn("Two different regressions", rep)
+        self.assertIn("P(any swap >=5pp below incumbent)", rep)
+        self.assertIn("not itself a lottery", rep)
+
 
 if __name__ == "__main__":
     unittest.main()

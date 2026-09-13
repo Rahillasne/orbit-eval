@@ -6,13 +6,13 @@ from setuptools import setup
 
 setup(
     name="orbit-eval",
-    version="0.8.1",
+    version="0.8.3",
     description=(
         "Honest statistics for robot-policy evaluation: CRN-paired checkpoint "
         "comparisons vs retrain-level method comparisons, shipping the "
         "measured ORBIT noise atlas."
     ),
-    license="AGPL-3.0-only",
+    license="Apache-2.0",
     python_requires=">=3.9",
     packages=["orbit_eval", "orbit_eval.gate"],
     install_requires=[],

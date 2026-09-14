@@ -14,7 +14,7 @@ referee and streams the rollouts to the page.
     python orbit_serve.py --join 3f9a2c/b --policy outputs/train/run7/checkpoints/last/pretrained_model --env pusht
 
 Needs `pip install 'lerobot[pusht]'` (plus the policy's extra, e.g. `lerobot[diffusion]`). Normalisation
-statistics come from the checkpoint's processors when present, otherwise from the training dataset
+statistics come from the checkpoint's processors when present, else from buffers inside the checkpoint, else from the training dataset
 (`--dataset`, default lerobot/pusht for PushT). Runtime defaults to https://arena.orbiteval.com; override with --runtime.
 """
 
@@ -75,16 +75,58 @@ def load_policy(path, env_key, device, overrides, dataset):
         pre, post = make_pre_post_processors(policy_cfg=pcfg, pretrained_path=path, preprocessor_overrides={"device_processor": {"device": device}})
         source = "checkpoint processors"
     except Exception:  # noqa: BLE001  (older checkpoints have no processor files)
-        from lerobot.datasets import LeRobotDatasetMetadata
+        stats = stats_from_checkpoint(path, pcfg)
+        if stats:
+            source = "normalisation buffers inside the checkpoint"
+        else:
+            from lerobot.datasets import LeRobotDatasetMetadata
 
-        ds = dataset or DATASET_FOR_ENV.get(env_key)
-        if not ds:
-            sys.exit("this checkpoint has no processor files; pass --dataset <repo used for training> for normalisation stats")
-        stats = LeRobotDatasetMetadata(ds).stats
+            ds = dataset or DATASET_FOR_ENV.get(env_key)
+            if not ds:
+                sys.exit("this checkpoint has no processor files; pass --dataset <repo used for training> for normalisation stats")
+            stats = LeRobotDatasetMetadata(ds).stats
+            source = f"dataset stats from {ds}"
         pre, post = make_pre_post_processors(policy_cfg=pcfg, dataset_stats=stats, preprocessor_overrides={"device_processor": {"device": device}})
-        source = f"dataset stats from {ds}"
     epre, epost = make_env_pre_post_processors(env_cfg=env_cfg, policy_cfg=pcfg)
     return policy, pre, post, epre, epost, source, torch
+
+
+def stats_from_checkpoint(path, pcfg):
+    """Normalisation statistics from the buffers an older checkpoint keeps inside model.safetensors.
+
+    Checkpoints trained before LeRobot moved normalisation into processors carry mean/std or min/max
+    buffers per feature. Using them reproduces exactly what the policy saw in training; dataset
+    statistics can differ (the public PushT Diffusion Policy uses ImageNet image statistics, and the
+    dataset's own image mean is ~0.97 because of the white background, which silently breaks it).
+    """
+    from safetensors import safe_open
+
+    f = os.path.join(path, "model.safetensors") if os.path.isdir(path) else None
+    if f is None:
+        from huggingface_hub import hf_hub_download
+
+        try:
+            f = hf_hub_download(path, "model.safetensors")
+        except Exception:  # noqa: BLE001
+            return {}
+    if not os.path.exists(f):
+        return {}
+    feats = {k.replace(".", "_"): k for k in list(pcfg.input_features) + list(pcfg.output_features)}
+    stats = {}
+    with safe_open(f, framework="pt") as sf:
+        for k in sf.keys():
+            if ".buffer_" not in k or not k.startswith(("normalize_inputs.", "normalize_targets.")):
+                continue
+            rest = k.split(".buffer_", 1)[1]
+            fkey, stat = rest.rsplit(".", 1)
+            feat = feats.get(fkey)
+            if feat is None or stat not in ("mean", "std", "min", "max"):
+                continue
+            t = sf.get_tensor(k)
+            if t.numel() and (t == float("inf")).any():
+                continue  # unused buffer placeholder
+            stats.setdefault(feat, {})[stat] = t
+    return stats
 
 
 def decode_obs(payload):

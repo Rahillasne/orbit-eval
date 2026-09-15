@@ -25,8 +25,6 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -34,11 +32,66 @@ DEFAULT_RUNTIME = os.environ.get("ORBIT_ARENA", "https://orbiteval-arena-1998022
 DATASET_FOR_ENV = {"pusht": "lerobot/pusht"}
 
 
-def http(method, url, body=None, timeout=40):
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode() or "{}")
+class HTTPStatusError(Exception):
+    def __init__(self, code, body):
+        super().__init__(f"HTTP {code}")
+        self.code, self.body = code, body
+
+
+class Client:
+    """One keep-alive connection to the runtime, re-opened on any network error, with retries.
+
+    A new TLS handshake per step is what made a first version slow (400 ms/action) and fragile
+    (one handshake timeout killed the session). Requests stay pending on the runtime until they are
+    answered, so retrying is always safe.
+    """
+
+    def __init__(self, base):
+        import http.client
+        import urllib.parse
+
+        u = urllib.parse.urlsplit(base)
+        self._mod = http.client
+        self.scheme, self.host, self.port, self.prefix = u.scheme, u.hostname, u.port, u.path.rstrip("/")
+        self.conn = None
+
+    def _open(self, timeout):
+        if self.conn is None:
+            cls = self._mod.HTTPSConnection if self.scheme == "https" else self._mod.HTTPConnection
+            self.conn = cls(self.host, self.port, timeout=timeout)
+        else:
+            self.conn.timeout = timeout
+        return self.conn
+
+    def _close(self):
+        try:
+            if self.conn is not None:
+                self.conn.close()
+        finally:
+            self.conn = None
+
+    def call(self, method, path, body=None, timeout=40, retries=6):
+        data = json.dumps(body).encode() if body is not None else None
+        last = None
+        for attempt in range(retries):
+            try:
+                c = self._open(timeout)
+                c.request(method, self.prefix + path, body=data, headers={"Content-Type": "application/json", "Connection": "keep-alive"})
+                r = c.getresponse()
+                raw = r.read()
+                if r.status >= 400:
+                    raise HTTPStatusError(r.status, raw.decode(errors="replace"))
+                return json.loads(raw.decode() or "{}")
+            except HTTPStatusError:
+                raise
+            except Exception as e:  # noqa: BLE001  (timeouts, resets, handshake failures)
+                last = e
+                self._close()
+                if attempt < retries - 1:
+                    wait = min(2 ** attempt, 8)
+                    print(f"connection problem ({type(e).__name__}: {str(e)[:80]}); retrying in {wait}s", flush=True)
+                    time.sleep(wait)
+        raise last
 
 
 def parse_overrides(items):
@@ -156,7 +209,11 @@ def main(argv=None):
     ap.add_argument("--threads", type=int, default=4)
     args = ap.parse_args(argv)
 
-    base = f"{args.runtime.rstrip('/')}/s/{args.join}"
+    client = Client(args.runtime.rstrip("/"))
+    base = f"/s/{args.join}"
+
+    def http(method, path, body=None, timeout=40):
+        return client.call(method, path, body, timeout=timeout)
     print(f"loading {args.policy} for {args.env} on {args.device} ...", flush=True)
     policy, pre, post, epre, epost, source, torch = load_policy(args.policy, args.env, args.device, parse_overrides(args.override), args.dataset)
     torch.set_num_threads(args.threads)
@@ -175,13 +232,15 @@ def main(argv=None):
     while True:
         try:
             nxt = http("GET", f"{base}/next?wait=20", timeout=45)
-        except urllib.error.HTTPError as e:
-            print(f"runtime error {e.code}: {e.read().decode()[:200]}", flush=True)
+        except HTTPStatusError as e:
+            print(f"runtime error {e.code}: {e.body[:200]}", flush=True)
+            if e.code == 404:
+                return 1
             time.sleep(2)
             continue
         except Exception as e:  # noqa: BLE001
-            print(f"connection problem: {e}; retrying", flush=True)
-            time.sleep(2)
+            print(f"runtime unreachable after retries: {e}; still trying", flush=True)
+            time.sleep(5)
             continue
         req = nxt.get("request")
         if req is None:
@@ -208,8 +267,10 @@ def main(argv=None):
         try:
             http("POST", f"{base}/action", {"request_id": req["request_id"], "actions": actions})
             n_actions += 1
-        except urllib.error.HTTPError as e:
-            print(f"action rejected {e.code}: {e.read().decode()[:160]}", flush=True)
+        except HTTPStatusError as e:
+            print(f"action rejected {e.code}: {e.body[:160]}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"could not deliver the action ({e}); the runtime will re-serve the observation", flush=True)
 
 
 if __name__ == "__main__":

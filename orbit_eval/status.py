@@ -336,6 +336,8 @@ def _next_action(st, target_pp):
 # menu. Only commands that exist are listed.
 ALSO = (
     ("orbit cover", "which instruction and workspace combinations were never recorded"),
+    ("orbit body", "which robot can physically do this, and what is measured on it"),
+    ("orbit freeze", "pin a checkpoint and its seeds so later comparisons are cheap"),
     ("orbit check", "did the new policy break any job, with the interval"),
     ("orbit next", "retrain, collect demonstrations, or run more trials, per job"),
     ("orbit log", "one keypress per trial, standing at the robot"),

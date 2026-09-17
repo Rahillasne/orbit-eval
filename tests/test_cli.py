@@ -319,7 +319,71 @@ class TestDemoAndCover(unittest.TestCase):
 
     def test_status_lists_the_other_commands_without_a_menu(self):
         code, out = _run(["status", "--demo"])
-        for cmd in ("orbit cover", "orbit check", "orbit next", "orbit log"):
+        for cmd in ("orbit cover", "orbit body", "orbit freeze", "orbit check",
+                    "orbit next", "orbit log"):
             self.assertIn(cmd, out)
-        self.assertNotIn("orbit body", out)
-        self.assertNotIn("orbit freeze", out)
+
+
+class TestBodyFreezeAndLoop(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="orbit_eval_bfl_")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_body_lists_the_database_with_sources_on_request(self):
+        code, out = _run(["body"])
+        self.assertEqual(code, 0)
+        self.assertIn("so101", out)
+        self.assertIn("robots", out)
+        code, out = _run(["body", "SO-101"])
+        self.assertEqual(code, 0)
+        self.assertIn("https://", out)
+        self.assertIn("not published", out)      # reach and payload, honestly
+
+    def test_body_arithmetic_names_the_shortfall(self):
+        code, out = _run(["body", "--reach", "500", "--payload", "1", "--budget", "5000",
+                          "--job", "pick_place"])
+        self.assertEqual(code, 0)
+        self.assertIn("PASSES", out)
+        self.assertIn("short by", out)
+        self.assertIn("MEASURED ON THIS JOB SHAPE", out)
+        self.assertNotIn("not right for", out.lower())
+
+    def test_freeze_writes_and_verifies_a_manifest(self):
+        from test_freeze import write_checkpoint
+        ck = write_checkpoint(self.tmp)
+        out_path = os.path.join(self.tmp, "release.json")
+        code, out = _run(["freeze", "--checkpoint", ck, "--out", out_path])
+        self.assertEqual(code, 0)
+        self.assertIn("FROZEN", out)
+        self.assertIn("sha256", out)
+        code, out = _run(["freeze", "--verify", out_path])
+        self.assertEqual(code, 0)
+        self.assertIn("VERIFIED", out)
+        with open(os.path.join(ck, "model.safetensors"), "wb") as fh:
+            fh.write(b"changed")
+        code, out = _run(["freeze", "--verify", out_path])
+        self.assertEqual(code, 1)
+        self.assertIn("model.safetensors", out)
+
+    def test_body_skill_compares_a_manifest_with_a_recording(self):
+        from test_freeze import write_checkpoint
+        from test_dataset import write_dataset
+        ck = write_checkpoint(self.tmp)
+        ds = write_dataset(os.path.join(self.tmp, "data"))
+        out_path = os.path.join(self.tmp, "release.json")
+        _run(["freeze", "--checkpoint", ck, "--dataset", ds, "--out", out_path])
+        code, out = _run(["body", "--skill", out_path, "--path", ds])
+        self.assertEqual(code, 0)
+        self.assertIn("SKILL FIT", out)
+        self.assertIn("calibration match", out)
+
+    def test_check_demo_audits_a_published_loop_as_rounds(self):
+        code, out = _run(["check", "--demo"])
+        self.assertEqual(code, 0)
+        self.assertIn("DEMO", out)
+        self.assertIn("2609.14633", out)
+        self.assertIn("loop", out)
+        self.assertNotIn("retrain and pick", out)
+        self.assertIn("rounds", out)

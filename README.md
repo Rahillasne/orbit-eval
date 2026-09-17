@@ -28,6 +28,29 @@ episode length, for which joints moved in each episode, and for where each
 joint sat. It counts. It never scores a demonstration, and it never says a gap
 caused a failure.
 
+```bash
+uvx --from orbit-eval orbit body --reach 500 --payload 1 --budget 5000 --job pick_place
+uvx --from orbit-eval orbit body so101          # one robot's sheet, every figure sourced
+```
+
+`body` is spec arithmetic over a database of thirty robots, every figure read
+from a page named per field and left null where nobody published it. It says
+"payload 0.5 kg, short by 2.5 kg", never "this arm is wrong for you", and then
+shows what the map has measured for that job shape on each body that passes,
+which is usually nothing, and saying so is the honest answer.
+
+```bash
+uvx --from orbit-eval orbit freeze --checkpoint outputs/train/act/checkpoints/last/pretrained_model \
+                                   --dataset ~/.cache/huggingface/lerobot/you/your_dataset
+```
+
+`freeze` pins the checkpoint's file hashes, the action-sampling seed, and the
+eval seed sequence in one `release.json`, so every later comparison is the cheap
+question: a fixed checkpoint under common random numbers. The dataset's joint
+ranges ride along, and `orbit body --skill release.json` compares them with any
+other recording joint by joint, which is what a downloaded skill needs before it
+runs on an arm whose calibration differs.
+
 Everything runs on your machine, reads what is already there, and has no
 dependencies. When you have evaluations:
 
@@ -181,6 +204,55 @@ It also reports the per-round risk and what it compounds to by round 10, 25 and
 counting rounds as independent flatters a loop that trains on its own output. The
 HTML report becomes a dashboard: a trend line per job across rounds, the rounds
 that broke something, the episode worklist, and what to do next.
+
+### If your robot improves itself
+
+Self-improving loops are the direction of the field: deploy, collect rollouts,
+have a judge decide which succeeded, retrain, redeploy. REVOLVE, Zero2Skill,
+HELP, Learning While Deploying and the Robot Data Factory all close that loop,
+and a 1,250-paper survey of self-improvement finds the same bottleneck in every
+one: the evaluator. "Every improvement loop is a claim that some signal can
+substitute for human judgment," and governance-grade measurement of that claim
+is the field's most underpopulated niche. That measurement is this tool.
+
+```bash
+uvx --from orbit-eval orbit check --demo
+```
+
+runs on Table II of REVOLVE (arXiv 2609.14633): four real tasks, five
+iterations, 100 rollouts each, one training run per iteration.
+
+```
+  5 policies x 4 jobs, 100 episodes each (csv)
+  iteration_1 -> iteration_5
+
+    IMPROVED     pour_water            22% ->  50%   +28.0  [+15, +40]
+    held         3 jobs
+
+  nothing regressed beyond your measurement noise. Smallest drop this battery can call: 14 points.
+  loop: 5 rounds, 0 broke a job.
+```
+
+The paper's +18.5 average is real end to end on one task and inside the noise on
+three, and no single round's step of two to eight points is callable at 100
+rollouts. Its judge runs at 72 to 80 percent agreement with humans, which
+`orbit judge` prices at a Youden's J of 0.44 to 0.61: every real difference the
+loop sees arrives at half size. Three commands cover a loop: `orbit judge` on the
+judge, `orbit freeze` on each round so rounds are compared under common random
+numbers, and `orbit check --history` on the chain, which reports creeping rot,
+silent rot, and the jobs that never recovered.
+
+### The map
+
+`orbit_eval/map/map.json` ships with the package: job shape by embodiment by
+model, each cell with its pooled rate, interval, trials, independent sources,
+and independent training seeds, which is the column no other board carries. A
+cell measured on one seed says `ONE_SEED`, because one seed is one draw of a
+20-point lottery. Ten cells today from the banked corpus and the public Hub;
+99 percent of the possible cells are empty, and an empty cell is the product:
+"nobody has measured a PiPER on a job shaped like yours" is the honest answer
+and the reason to run the measurement. `orbit body <robot>` reads it. It is a
+map, not a leaderboard: it reports measurement status, never rank.
 
 ### In CI, on every pull request
 

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbit-eval"
-version = "0.16.0"
+version = "0.17.0"
 description = "You have a robot. orbit tells you what to do next, and how you will know it worked: what the recording got wrong, what it never covered, and whether a change survived the noise. Zero dependencies."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -57,7 +57,8 @@ orbit-shipgate = "orbit_eval.gate.cli:main"
 packages = ["orbit_eval", "orbit_eval.gate"]
 
 [tool.setuptools.package-data]
-orbit_eval = ["skills/*.md", "demo/*.md", "demo/*/meta/*"]
+orbit_eval = ["skills/*.md", "demo/*.md", "demo/*/meta/*", "demo/*/*.csv",
+              "map/*.json", "robots/*.json"]
 
 [tool.pytest.ini_options]
 markers = [

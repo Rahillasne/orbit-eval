@@ -1,0 +1,24 @@
+# REVOLVE (arXiv 2609.14633, Table II): task success rates across five iterations of a
+# self-improving loop on a ViperX arm, 100 real-world rollouts per task per iteration.
+# One training run per iteration. Transcribed 2026-09-17; see demo/SOURCES.md.
+version,skill,n_episodes,success_rate
+iteration_1,sort_workpiece,100,48
+iteration_1,throw_paper,100,34
+iteration_1,pour_water,100,22
+iteration_1,ring_bell,100,56
+iteration_2,sort_workpiece,100,52
+iteration_2,throw_paper,100,36
+iteration_2,pour_water,100,28
+iteration_2,ring_bell,100,60
+iteration_3,sort_workpiece,100,56
+iteration_3,throw_paper,100,40
+iteration_3,pour_water,100,34
+iteration_3,ring_bell,100,64
+iteration_4,sort_workpiece,100,62
+iteration_4,throw_paper,100,42
+iteration_4,pour_water,100,42
+iteration_4,ring_bell,100,68
+iteration_5,sort_workpiece,100,66
+iteration_5,throw_paper,100,46
+iteration_5,pour_water,100,50
+iteration_5,ring_bell,100,72

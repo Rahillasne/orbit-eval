@@ -168,7 +168,7 @@ def dominant_reason(counts, min_share=0.4, min_n=5):
 
 
 def diagnose(data, target_pp=TARGET_PP, lottery_pp=LOTTERY_PP, weak_pct=WEAK_PCT,
-             reasons=None):
+             reasons=None, rounds=False):
     """Per job: unlucky, weak, thin or fine, under one suite-level power statement.
 
     Power is deliberately NOT a per-job verdict. Teams run the same battery on every
@@ -204,6 +204,15 @@ def diagnose(data, target_pp=TARGET_PP, lottery_pp=LOTTERY_PP, weak_pct=WEAK_PCT
             diag = "THIN"
             action = ("only %d trials here against %d elsewhere: even out the battery"
                       % (n, median_n))
+        elif J >= 2 and spread > ceiling and lottery >= lottery_pp and rounds:
+            # The candidates are successive rounds of one loop, not copies of one
+            # recipe. A spread past the floor means the loop moved this job; it
+            # is not a lottery to be re-drawn.
+            diag = "MOVED"
+            action = ("rounds range %.0f%% to %.0f%%, a %.0f-pt spread past the %.0f "
+                      "identical copies would show: the loop moved this job; the "
+                      "round-by-round audit says whether it held"
+                      % (worst, best, spread, ceiling))
         elif J >= 2 and spread > ceiling and lottery >= lottery_pp:
             diag = "UNLUCKY"
             action = ("copies range %.0f%% to %.0f%%, a %.0f-pt spread where identical "
@@ -240,16 +249,17 @@ def diagnose(data, target_pp=TARGET_PP, lottery_pp=LOTTERY_PP, weak_pct=WEAK_PCT
             "failure_reasons": pooled.get(s, {}),
             "dominant_reason": dominant_reason(pooled.get(s, {})),
         })
-    order = {"THIN": 0, "UNLUCKY": 1, "WEAK": 2, "FINE": 3}
+    order = {"THIN": 0, "UNLUCKY": 1, "MOVED": 1, "WEAK": 2, "FINE": 3}
     rows.sort(key=lambda r: (order[r["diagnosis"]],
-                             -r["lottery_pp"] if r["diagnosis"] == "UNLUCKY" else r["best_pct"]))
+                             -r["lottery_pp"] if r["diagnosis"] in ("UNLUCKY", "MOVED")
+                             else r["best_pct"]))
     counts = {}
     for r in rows:
         counts[r["diagnosis"]] = counts.get(r["diagnosis"], 0) + 1
     worst_res = max((r["resolvable_drop_pp"] for r in rows), default=float("nan"))
     need_all = max((r["episodes_for_target"] or 0) for r in rows) if rows else 0
     return {
-        "n_candidates": J, "candidates": cands, "n_skills": len(rows),
+        "n_candidates": J, "candidates": cands, "n_skills": len(rows), "rounds": bool(rounds),
         "target_pp": target_pp, "lottery_pp": lottery_pp, "weak_pct": weak_pct,
         "rows": rows, "counts": counts,
         "median_episodes": median_n,
@@ -273,9 +283,12 @@ def format_next(d):
         return "orbit next: no jobs shared by every policy, so there is nothing to compare."
     c = d["counts"]
     L = ["What to do next", "=" * 74, ""]
-    L.append("%d %s, %d trained %s, %d trials each."
+    unit = ("round", "rounds") if d.get("rounds") else ("copy", "copies")
+    L.append("%d %s, %d %s, %d trials each."
              % (d["n_skills"], _plural(d["n_skills"], "job"), d["n_candidates"],
-                _plural(d["n_candidates"], "copy", "copies"), d["median_episodes"]))
+                (unit[0] if d["n_candidates"] == 1 else unit[1]) if d.get("rounds")
+                else "trained " + _plural(d["n_candidates"], "copy", "copies"),
+                d["median_episodes"]))
     if d["underpowered_for_target"]:
         L.append("At %d trials a job has to drop %.0f points before you can call it. To "
                  "call a" % (d["median_episodes"], d["resolvable_drop_pp"]))
@@ -294,7 +307,8 @@ def format_next(d):
         L.append("told apart from sampling noise. Train the same recipe twice more and")
         L.append("re-run. It is the cheapest measurement in this tool.")
         L.append("")
-    label = {"UNLUCKY": "retrain", "WEAK": "collect", "THIN": "even out", "FINE": "-"}
+    label = {"UNLUCKY": "retrain", "MOVED": "audit", "WEAK": "collect", "THIN": "even out",
+             "FINE": "-"}
     L.append("%-20s %6s %7s  %-9s %s" % ("job", "best", "spread", "do", "why"))
     L.append("-" * 74)
     for r in d["rows"]:
@@ -309,6 +323,12 @@ def format_next(d):
         L.append("          lottery and not your data: train the recipe again and let")
         L.append("          `orbit check` pick per job, keeping the incumbent where the")
         L.append("          evidence is not there.")
+    if c.get("MOVED"):
+        L.append("AUDIT     %d %s moved further across rounds than sampling explains. The"
+                 % (c["MOVED"], _plural(c["MOVED"], "job")))
+        L.append("          loop changed %s; `orbit check --history` says whether any"
+                 % _plural(c["MOVED"], "it", "them"))
+        L.append("          single round could see it and whether it held to the end.")
     if c.get("WEAK"):
         L.append("COLLECT   %d %s %s bad in every copy you trained. Neither trials nor seeds"
                  % (c["WEAK"], _plural(c["WEAK"], "job"), _plural(c["WEAK"], "is", "are")))

@@ -124,7 +124,9 @@ def run(root=".", incumbent=None, candidate=None, target_pp=nextstep.TARGET_PP,
         "trimmed": {s: min(len(group.data[c][s]) for c in group.data) for s in skills},
         "next": nextstep.diagnose(data, target_pp=target_pp,
                                   reasons={c: v for c, v in (group.reasons or {}).items()
-                                           if c in group.data}),
+                                           if c in group.data},
+                                  rounds=(len(members) >= 3 if want_history is None
+                                          else bool(want_history))),
     }
     if cand is None:
         out["check"] = None
@@ -146,7 +148,9 @@ def run(root=".", incumbent=None, candidate=None, target_pp=nextstep.TARGET_PP,
     out["check"] = release_mod.check(data, inc, cand, drop_pp=drop_pp,
                                      min_episodes=min_episodes,
                                      paired=group.paired_ok, episode_ids=ids)
-    out["worklist"] = None if mismatch else worklist_mod.build(
+    # No episode list when the episodes are not real: trials rebuilt from a
+    # rate have no identity, and runs with different seeds have no alignment.
+    out["worklist"] = None if (mismatch or not group.paired_ok) else worklist_mod.build(
         data, inc, cand, media=group.media, crn_asserted=crn)
     # What would asserting common random numbers buy? Computed here so the flag can
     # advertise itself at the moment it is relevant, instead of living in a manual.
@@ -322,11 +326,11 @@ def format_check_full(res, root="."):
     return "\n".join(L)
 
 
-def format_nothing(res, root="."):
+def format_nothing(res, root=".", prog="orbit check"):
     jbp = res.get("jobs_by_policy")
     if jbp:
-        L = ["orbit check: %d polic%s found under %s, but no two of them ran the same jobs."
-             % (len(jbp), "y was" if len(jbp) == 1 else "ies were", res.get("root", root)),
+        L = ["%s: %d polic%s found under %s, but no two of them ran the same jobs."
+             % (prog, len(jbp), "y was" if len(jbp) == 1 else "ies were", res.get("root", root)),
              ""]
         for c, js in jbp.items():
             L.append("  %-28s %s" % (c[:28], ", ".join(js) or "(no jobs)"))
@@ -341,7 +345,7 @@ def format_nothing(res, root="."):
             ["  %-42s %s" % (os.path.basename(r["path"]), r["why"]) for r in rej] +
             [""]) if rej else []
     return "\n".join([
-        "orbit check: no evaluations found under %s" % res.get("root", root),
+        "%s: no evaluations found under %s" % (prog, res.get("root", root)),
         ] + near + [
         "",
         "It looks for three things, all of which it can read as they are:",

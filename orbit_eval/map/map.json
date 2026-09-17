@@ -1,0 +1,761 @@
+{
+ "axes": {
+  "embodiment": [
+   "agilex_piper",
+   "aloha",
+   "franka_panda",
+   "koch_v1_1",
+   "lekiwi",
+   "pusht_2d",
+   "reachy2",
+   "sawyer",
+   "so100",
+   "so101",
+   "stretch3",
+   "unitree_g1",
+   "ur5e"
+  ],
+  "job_shape": [
+   "pick_place",
+   "insertion",
+   "sort",
+   "push",
+   "articulated",
+   "deformable",
+   "long_horizon",
+   "pour"
+  ],
+  "model": [
+   "act",
+   "diffusion",
+   "dreamzero",
+   "groot_n15",
+   "openvla",
+   "pi0",
+   "pi05",
+   "smolvla",
+   "vqbet",
+   "xvla"
+  ]
+ },
+ "bodies": {
+  "agilex_piper": {
+   "db": "agilex_piper",
+   "name": "AgileX PiPER"
+  },
+  "aloha": {
+   "db": "aloha2",
+   "name": "ALOHA (sim, gym-aloha)",
+   "note": "gym-aloha simulates the original ALOHA; ALOHA 2 is its successor"
+  },
+  "franka_panda": {
+   "db": "franka_fr3",
+   "name": "Franka Panda (sim, LIBERO)",
+   "note": "LIBERO simulates the Panda; the FR3 is its successor"
+  },
+  "koch_v1_1": {
+   "db": "koch_v1_1",
+   "name": "Koch v1.1"
+  },
+  "lekiwi": {
+   "db": "lekiwi",
+   "name": "LeKiwi"
+  },
+  "pusht_2d": {
+   "db": null,
+   "name": "PushT (2-D sim pusher)"
+  },
+  "reachy2": {
+   "db": "reachy2",
+   "name": "Reachy 2"
+  },
+  "sawyer": {
+   "db": null,
+   "name": "Sawyer (Meta-World sim)"
+  },
+  "so100": {
+   "db": "so100",
+   "name": "SO-100"
+  },
+  "so101": {
+   "db": "so101",
+   "name": "SO-101"
+  },
+  "stretch3": {
+   "db": "stretch3",
+   "name": "Stretch 3"
+  },
+  "unitree_g1": {
+   "db": "unitree_g1",
+   "name": "Unitree G1"
+  },
+  "ur5e": {
+   "db": "ur5e",
+   "name": "UR5e"
+  }
+ },
+ "cells": [
+  {
+   "ci95": null,
+   "embodiment": "aloha",
+   "job_shape": "insertion",
+   "k": 0,
+   "model": "act",
+   "n_seeds": 8,
+   "n_sources": 1,
+   "n_trials": 0,
+   "n_trials_variance": 4000,
+   "notes": [
+    "variance from aloha-insertion-act is not quoted: a low-success-rate regime"
+   ],
+   "orgs": [
+    "ORBIT"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "ALOHA sim_insertion / ACT from-scratch (lerobot defaults) -- LOW-SR regime",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "aloha-insertion-act",
+     "source": "orbit-atlas"
+    }
+   ],
+   "sigma_df": null,
+   "sigma_run": null,
+   "sim_or_real": "sim",
+   "sr": null,
+   "status": "ONE_SOURCE"
+  },
+  {
+   "ci95": [
+    79.5,
+    86.0
+   ],
+   "embodiment": "aloha",
+   "job_shape": "pick_place",
+   "k": 415,
+   "model": "act",
+   "n_seeds": 9,
+   "n_sources": 2,
+   "n_trials": 500,
+   "n_trials_variance": 4000,
+   "notes": [],
+   "orgs": [
+    "ORBIT",
+    "lerobot"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "ALOHA sim_transfer_cube / ACT from-scratch (lerobot defaults)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "aloha-transfer-cube-act",
+     "source": "orbit-atlas"
+    },
+    {
+     "eval_seed": 1000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_lerobot_act_aloha_sim_transfer_cube_human.json",
+     "hub_id": "lerobot/act_aloha_sim_transfer_cube_human",
+     "kind": "eval_info.json",
+     "md5": "009d37c399cddf5eb6488f20423643f7",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "lerobot",
+     "source": "hub:lerobot/act_aloha_sim_transfer_cube_human",
+     "url": "https://huggingface.co/lerobot/act_aloha_sim_transfer_cube_human"
+    }
+   ],
+   "sigma_df": 7,
+   "sigma_regime": "aloha-transfer-cube-act",
+   "sigma_run": 6.515,
+   "sim_or_real": "sim",
+   "sr": 83.0,
+   "status": "MEASURED"
+  },
+  {
+   "ci95": null,
+   "embodiment": "franka_panda",
+   "job_shape": "pick_place",
+   "k": 0,
+   "model": "diffusion",
+   "n_seeds": 8,
+   "n_sources": 1,
+   "n_trials": 0,
+   "n_trials_variance": 4400,
+   "notes": [],
+   "orgs": [
+    "ORBIT"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / DiffusionPolicy k=22 (Phase 2)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "libero-dp-k22",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / DiffusionPolicy k=31 (Tier 1)",
+     "n_seeds": 6,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "libero-dp-k31",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / DiffusionPolicy k=44 full (Tier 1)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "libero-dp-k44",
+     "source": "orbit-atlas"
+    }
+   ],
+   "sigma_df": 7,
+   "sigma_regime": "libero-dp-k22",
+   "sigma_run": 11.43,
+   "sim_or_real": "sim",
+   "sr": null,
+   "status": "ONE_SOURCE"
+  },
+  {
+   "ci95": [
+    60.1,
+    64.8
+   ],
+   "embodiment": "franka_panda",
+   "job_shape": "pick_place",
+   "k": 1000,
+   "model": "pi05",
+   "n_seeds": 11,
+   "n_sources": 1,
+   "n_trials": 1600,
+   "n_trials_variance": 5400,
+   "notes": [],
+   "orgs": [
+    "ORBIT"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / pi0.5 fine-tune k=22",
+     "n_seeds": 11,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pi05-ft",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / pi0.5 fine-tune k=88 multi-task (production k)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pi05-ft-k88-multitask",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / pi0.5 fine-tune k=22 multi-task",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pi05-ft-k22-multitask",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "research/crossmodel_2026-09-15/release_poolB.json",
+     "kind": "preregistered_wave",
+     "n_seeds": 8,
+     "n_trials": 1600,
+     "note": "LIBERO-Object, 10 jobs, 20 episodes per job per run, 8 runs",
+     "org": "ORBIT",
+     "prereg_sha256": "66b4ffff92f6b8b2918c349a04f6a17919a2c1541e8273389edec25190b476af",
+     "source": "crossmodel-1"
+    }
+   ],
+   "sigma_df": 10,
+   "sigma_regime": "pi05-ft",
+   "sigma_run": 9.74,
+   "sim_or_real": "sim",
+   "sr": 62.5,
+   "status": "ONE_SOURCE"
+  },
+  {
+   "ci95": [
+    55.4,
+    60.3
+   ],
+   "embodiment": "franka_panda",
+   "job_shape": "pick_place",
+   "k": 926,
+   "model": "smolvla",
+   "n_seeds": 9,
+   "n_sources": 1,
+   "n_trials": 1600,
+   "n_trials_variance": 3800,
+   "notes": [],
+   "orgs": [
+    "ORBIT"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / SmolVLA fine-tune k=22 (Tier 2)",
+     "n_seeds": 7,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "smolvla-ft",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / SmolVLA fine-tune k=88 multi-task",
+     "n_seeds": 3,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "smolvla-ft-k88-multitask",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "LIBERO / SmolVLA fine-tune, pooled across suites",
+     "n_seeds": 9,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "smolvla-ft-pooled",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "research/crossmodel_2026-09-15/release_poolB.json",
+     "kind": "preregistered_wave",
+     "n_seeds": 8,
+     "n_trials": 1600,
+     "note": "LIBERO-Object, 10 jobs, 20 episodes per job per run, 8 runs",
+     "org": "ORBIT",
+     "prereg_sha256": "66b4ffff92f6b8b2918c349a04f6a17919a2c1541e8273389edec25190b476af",
+     "source": "crossmodel-1"
+    }
+   ],
+   "sigma_df": 8,
+   "sigma_regime": "smolvla-ft-pooled",
+   "sigma_run": 2.82,
+   "sim_or_real": "sim",
+   "sr": 57.9,
+   "status": "ONE_SOURCE"
+  },
+  {
+   "ci95": [
+    59.7,
+    68.1
+   ],
+   "embodiment": "pusht_2d",
+   "job_shape": "push",
+   "k": 320,
+   "model": "act",
+   "n_seeds": 9,
+   "n_sources": 2,
+   "n_trials": 500,
+   "n_trials_variance": 12000,
+   "notes": [
+    "variance from pusht-act is not quoted: a low-success-rate regime"
+   ],
+   "orgs": [
+    "ORBIT",
+    "alexandersoare"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "PushT / ACT from-scratch (lerobot defaults) \u2014 LOW-SR regime",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pusht-act",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "PushT / ACT from-scratch, eval n_action_steps=8 (chunk 100)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pusht-act-h8",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "PushT / ACT from-scratch, eval n_action_steps=16 (chunk 100)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pusht-act-h16",
+     "source": "orbit-atlas"
+    },
+    {
+     "eval_seed": 100000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_alexandersoare_act_pusht_keypoints.json",
+     "hub_id": "alexandersoare/act_pusht_keypoints",
+     "kind": "eval_info.json",
+     "md5": "4d65a086c414dadac3cfd37b7a327adf",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "alexandersoare",
+     "source": "hub:alexandersoare/act_pusht_keypoints",
+     "url": "https://huggingface.co/alexandersoare/act_pusht_keypoints"
+    }
+   ],
+   "sigma_df": 7,
+   "sigma_regime": "pusht-act-h8",
+   "sigma_run": 4.849,
+   "sim_or_real": "sim",
+   "sr": 64.0,
+   "status": "MEASURED"
+  },
+  {
+   "ci95": [
+    55.9,
+    60.2
+   ],
+   "embodiment": "pusht_2d",
+   "job_shape": "push",
+   "k": 1161,
+   "model": "diffusion",
+   "n_seeds": 11,
+   "n_sources": 4,
+   "n_trials": 2000,
+   "n_trials_variance": 6500,
+   "notes": [
+    "variance from pusht-dp-rebuilt is not quoted: floor-dominated"
+   ],
+   "orgs": [
+    "Amandee",
+    "ORBIT",
+    "lerobot",
+    "osanseviero"
+   ],
+   "provenance": [
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "PushT / DiffusionPolicy k=103 (old gym_pusht stack)",
+     "n_seeds": 8,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pusht-dp",
+     "source": "orbit-atlas"
+    },
+    {
+     "file": "orbit_eval/atlas.py",
+     "kind": "atlas_regime",
+     "label": "PushT / DiffusionPolicy k=103 (rebuilt gym_pusht stack) -- FLOOR-DOMINATED, not usable as a comparator",
+     "n_seeds": 5,
+     "n_trials": null,
+     "org": "ORBIT",
+     "regime": "pusht-dp-rebuilt",
+     "source": "orbit-atlas"
+    },
+    {
+     "eval_seed": 1000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_lerobot_diffusion_pusht.json",
+     "hub_id": "lerobot/diffusion_pusht",
+     "kind": "eval_info.json",
+     "md5": "1eebec076e3f155f6f9f1b3df38d9130",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "lerobot",
+     "source": "hub:lerobot/diffusion_pusht",
+     "url": "https://huggingface.co/lerobot/diffusion_pusht"
+    },
+    {
+     "eval_seed": 100000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_osanseviero_diffusion_pusht.json",
+     "hub_id": "osanseviero/diffusion_pusht",
+     "kind": "eval_info.json",
+     "md5": "16b61b2a4c4cd0692cda0120a39e624c",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "osanseviero",
+     "source": "hub:osanseviero/diffusion_pusht",
+     "url": "https://huggingface.co/osanseviero/diffusion_pusht"
+    },
+    {
+     "eval_seed": 100000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_Amandee_diffusion_transformer_pusht.json",
+     "hub_id": "Amandee/diffusion_transformer_pusht",
+     "kind": "eval_info.json",
+     "md5": "febd0125ad2ada15bef92d43c4887a77",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "Amandee",
+     "source": "hub:Amandee/diffusion_transformer_pusht",
+     "url": "https://huggingface.co/Amandee/diffusion_transformer_pusht"
+    },
+    {
+     "eval_seed": 100000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_lerobot_diffusion_pusht_keypoints.json",
+     "hub_id": "lerobot/diffusion_pusht_keypoints",
+     "kind": "eval_info.json",
+     "md5": "f4630053bb0627e1f43df69fc1964f60",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "lerobot",
+     "source": "hub:lerobot/diffusion_pusht_keypoints",
+     "url": "https://huggingface.co/lerobot/diffusion_pusht_keypoints"
+    }
+   ],
+   "sigma_df": 7,
+   "sigma_regime": "pusht-dp",
+   "sigma_run": 2.09,
+   "sim_or_real": "sim",
+   "sr": 58.0,
+   "status": "MEASURED"
+  },
+  {
+   "ci95": [
+    58.4,
+    64.5
+   ],
+   "embodiment": "pusht_2d",
+   "job_shape": "push",
+   "k": 615,
+   "model": "vqbet",
+   "n_seeds": 2,
+   "n_sources": 2,
+   "n_trials": 1000,
+   "n_trials_variance": 0,
+   "notes": [],
+   "orgs": [
+    "JayLee131",
+    "lerobot"
+   ],
+   "provenance": [
+    {
+     "eval_seed": 100000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_lerobot_vqbet_pusht.json",
+     "hub_id": "lerobot/vqbet_pusht",
+     "kind": "eval_info.json",
+     "md5": "b4f4362d284e48fbc2f4bf67b668cce1",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "lerobot",
+     "source": "hub:lerobot/vqbet_pusht",
+     "url": "https://huggingface.co/lerobot/vqbet_pusht"
+    },
+    {
+     "eval_seed": 100000,
+     "file": "research/gtm_2026-09-16/demo_sources/ei_JayLee131_vqbet_pusht.json",
+     "hub_id": "JayLee131/vqbet_pusht",
+     "kind": "eval_info.json",
+     "md5": "bd1a7ba581874ed04a986853b5223b82",
+     "n_seeds": 1,
+     "n_trials": 500,
+     "org": "JayLee131",
+     "source": "hub:JayLee131/vqbet_pusht",
+     "url": "https://huggingface.co/JayLee131/vqbet_pusht"
+    }
+   ],
+   "sigma_df": null,
+   "sigma_run": null,
+   "sim_or_real": "sim",
+   "sr": 61.5,
+   "status": "MEASURED"
+  }
+ ],
+ "excluded": [
+  {
+   "file": "research/gtm_2026-09-16/demo_sources/ei_lerobot_act_aloha_sim_insertion_human.json",
+   "hub_id": "lerobot/act_aloha_sim_insertion_human",
+   "md5": "009d37c399cddf5eb6488f20423643f7",
+   "why": "byte-identical to ei_lerobot_act_aloha_sim_transfer_cube_human; the file reports a transfer-cube result under an insertion name (verified 2026-09-16)"
+  }
+ ],
+ "generated": "2026-09-17",
+ "models": {
+  "act": "ACT",
+  "diffusion": "Diffusion Policy",
+  "dreamzero": "DreamZero",
+  "groot_n15": "GR00T N1.5",
+  "openvla": "OpenVLA",
+  "pi0": "pi0",
+  "pi05": "pi0.5",
+  "smolvla": "SmolVLA",
+  "vqbet": "VQ-BeT",
+  "xvla": "X-VLA"
+ },
+ "rule": "UNMEASURED: no trials. ONE_SEED: one training run. ONE_SOURCE: one organisation. MEASURED: at least two seeds and two sources. Sim cells measure variance and relative comparison, never real-world performance.",
+ "schema": 1,
+ "skills": [
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "Histochemichael/act-so101-rack-centered-approach-2cam-25",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/Histochemichael/act-so101-rack-centered-approach-2cam-25"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "Vizuara/dreamzero-so101-lora",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "dreamzero",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/Vizuara/dreamzero-so101-lora"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "twanghcmut/pi05-SO101-Multitask",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "pi05",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/twanghcmut/pi05-SO101-Multitask"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "khanhnd61/act-matched_so101-multi-task-clean",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/khanhnd61/act-matched_so101-multi-task-clean"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "jdgalviss/act_so101_test",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/jdgalviss/act_so101_test"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "rancheng222/act_so101_tie_bag",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/rancheng222/act_so101_tie_bag"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "Kunalmod/act_so101_test",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/Kunalmod/act_so101_test"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "phildav/act_so101_test020000",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/phildav/act_so101_test020000"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "phildav/act_so101_test",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/phildav/act_so101_test"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "rancheng222/so101_tie_bag",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "act",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/rancheng222/so101_tie_bag"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "rancheng222/smolvla_so101_tie_bag",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "smolvla",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/rancheng222/smolvla_so101_tie_bag"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "phildav/smolvla_so101_test",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "smolvla",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/phildav/smolvla_so101_test"
+  },
+  {
+   "embodiment": "so101",
+   "exists": true,
+   "hub_id": "phildav/smolvla_so101_test_004000",
+   "job_shape": "unknown",
+   "measured": false,
+   "model": "smolvla",
+   "n_trials": 0,
+   "note": "no success number on the model card (README fetched 2026-09-17)",
+   "url": "https://huggingface.co/phildav/smolvla_so101_test_004000"
+  }
+ ],
+ "sources": {
+  "crossmodel-1": "research/crossmodel_2026-09-15 (preregistered, scored 2026-09-15)",
+  "hub": "research/gtm_2026-09-16/demo_sources (public eval_info.json files, 2026-09-16)",
+  "orbit-atlas": "orbit_eval/atlas.py (ORBIT research programme, 2026-06 to 2026-09)",
+  "so101-skills": "Hugging Face Hub search 'so101', 2026-09-17"
+ }
+}

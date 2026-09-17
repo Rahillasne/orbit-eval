@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.17.0 — 2026-09-17
+
+The five commands of the spec are all shipped, and the map is real.
+
+**`orbit body`: which robot can physically do this.** Reach, payload, degrees
+of freedom and price against a robot database of thirty bodies, every figure
+read from a page named per field and nulls where a figure was never published
+(the SO-101's reach and payload are not published anywhere; the database says
+so instead of guessing). Output is three blocks: what the task needs, what
+passes, cannot be checked, or fails and by how much, and what the map has
+measured for that job shape on each body that passes. It never says an arm is
+wrong for a task; it says "payload 0.5 kg, short by 2.5 kg".
+
+**`orbit body --skill release.json`** compares a frozen skill's trained joint
+ranges with your own recording, joint by joint. LeRobot normalises commands to
+each arm's own calibration, so two SO-101s are not the same body until the
+ranges are shown to overlap. This is the check a downloaded skill needs before
+it runs.
+
+**`orbit freeze`: pin it so every later comparison is cheap.** One manifest
+holds the checkpoint's file hashes, the inference seed (diffusion and
+flow-matching policies sample their actions, so a frozen checkpoint is still
+not deterministic), the eval seed sequence so any two runs are paired by
+construction, and the dataset's joint ranges for the skill listing. `--verify`
+re-hashes and names what moved. The manifest says what the checkpoint is; it
+does not say that it works.
+
+**The map ships.** `orbit_eval/map/map.json`, built from the banked corpus by
+`research/map/build_map.py`: the noise atlas, the preregistered cross-model
+wave, nine public `eval_info.json` files from the Hub (one excluded as a
+byte-identical duplicate, with the reason), and the thirteen public SO-101
+fine-tunes that carry no number at all. Each cell carries the pooled rate, the
+interval, trials, independent sources and independent training seeds, and a
+status of UNMEASURED, ONE_SEED, ONE_SOURCE or MEASURED. Ten cells; 99 percent
+of the possible cells are empty, and an empty cell is the product. `orbit body
+<robot>` reads it.
+
+**`orbit check --demo`: a published self-improvement loop, audited.** Table II
+of REVOLVE (arXiv 2609.14633, five iterations, four real tasks, 100 rollouts
+each) is bundled as counts. The end-to-end gain is real on one task and inside
+the noise on three; no single round's step is callable at 100 rollouts. When
+the policies in a folder are successive rounds of one loop, `next` now says
+"rounds" and "moved" instead of "copies" and "retrain".
+
+**Removed nothing.** 0.16.0's commands are unchanged.
+
 ## 0.16.0 — 2026-09-17
 
 **`orbit cover`: what the recording is missing.** Factor coverage from design of

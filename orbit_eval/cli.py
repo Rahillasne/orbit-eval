@@ -31,10 +31,13 @@ import os
 import sys
 
 from . import __version__, atlas, audit, io, power, route, stats
+from . import body as body_mod
 from . import check as check_mod
 from . import cover as cover_mod
 from . import dataset as dataset_mod
+from . import freeze as freeze_mod
 from . import judge as judge_mod
+from . import robomap
 from . import logtrials
 from . import nextstep
 from . import release as release_mod
@@ -519,7 +522,117 @@ def cmd_route_plan(args):
     return 0
 
 
+def cmd_freeze(args):
+    """Pin a checkpoint, its sampling seed and its eval seeds in one manifest."""
+    if args.verify:
+        try:
+            m = freeze_mod.load(args.verify)
+        except (OSError, ValueError) as e:
+            print("orbit freeze: %s" % e)
+            return 2
+        v = freeze_mod.verify(m)
+        if args.json:
+            print(json.dumps(v, indent=2))
+        else:
+            print(freeze_mod.format_verify(v, args.verify))
+        return 0 if v["ok"] else 1
+    if not args.checkpoint:
+        print("orbit freeze: pass --checkpoint PATH (a pretrained_model directory or a "
+              "weights file), or --verify release.json")
+        return 2
+    try:
+        start, count = _seed_range(args.eval_seeds)
+        m = freeze_mod.build(args.checkpoint, dataset_path=args.dataset,
+                             inference_seed=args.inference_seed,
+                             eval_start=start, eval_count=count, record=args.record)
+    except (OSError, ValueError) as e:
+        print("orbit freeze: %s" % e)
+        return 2
+    freeze_mod.write(m, args.out)
+    if args.json:
+        print(json.dumps(m, indent=2))
+    else:
+        print(freeze_mod.format_freeze(m, args.out))
+    return 0
+
+
+def _seed_range(text):
+    """'1000:100' -> (1000, 100); '1000' -> (1000, default count)."""
+    if not text:
+        return freeze_mod.DEFAULT_EVAL_START, freeze_mod.DEFAULT_EVAL_COUNT
+    if ":" in text:
+        a, b = text.split(":", 1)
+        return int(a), int(b)
+    return int(text), freeze_mod.DEFAULT_EVAL_COUNT
+
+
+def cmd_body(args):
+    """Which robot can physically do this, from spec sheets; and what is measured on it."""
+    db = body_mod.load_db()
+    m = robomap.load()
+    if args.skill:
+        if not os.path.isfile(args.skill):
+            print("orbit body: no manifest at %s. `orbit freeze --checkpoint <dir> --dataset "
+                  "<dataset>` writes one, and a skill you downloaded should ship with its own."
+                  % args.skill)
+            return 2
+        try:
+            manifest = freeze_mod.load(args.skill)
+        except (OSError, ValueError) as e:
+            print("orbit body: %s" % e)
+            return 2
+        try:
+            meta = dataset_mod.load(args.path or ".")
+        except ValueError:
+            print("orbit body: no LeRobot dataset under %s to compare the skill with. Point "
+                  "--path at the folder that holds your recording's meta/info.json."
+                  % os.path.abspath(args.path or "."))
+            return 2
+        f = body_mod.skill_fit(manifest, meta)
+        if args.json:
+            print(json.dumps(f, indent=2))
+        else:
+            print(body_mod.format_skill_fit(f, args.skill))
+        return 1 if f.get("n_outside") else 0
+    need = {"reach_mm": args.reach, "payload_kg": args.payload, "dof": args.dof,
+            "price_usd": args.budget, "class": args.klass}
+    asked = any(v is not None for v in need.values())
+    if args.robot and not asked:
+        r = body_mod.find(db, args.robot)
+        if r is None:
+            print("orbit body: no robot called %r. `orbit body` lists the %d known."
+                  % (args.robot, len(db.get("robots", []))))
+            return 2
+        if args.json:
+            print(json.dumps({"robot": r, "cells": robomap.cell(m, embodiment=r["id"]),
+                              "skills": robomap.skills_for(m, embodiment=r["id"])}, indent=2))
+        else:
+            print(body_mod.format_sheet(r, m=m))
+        return 0
+    if not asked:
+        if args.json:
+            print(json.dumps(db, indent=2))
+        else:
+            print(body_mod.format_list(db, m=m))
+        return 0
+    rows = body_mod.fit(db, need)
+    if args.json:
+        print(json.dumps({"need": need, "rows": rows}, indent=2))
+    else:
+        print(body_mod.format_fit(rows, need, m=m, job_shape=args.job))
+    return 0
+
+
 def cmd_check(args):
+    if getattr(args, "demo", False):
+        path, hub_id, blurb = dataset_mod.demo_path("check")
+        if not args.json:
+            print()
+            print("  DEMO  %s" % hub_id)
+            print("        %s, bundled with this package." % blurb)
+            print("        Run `orbit check` in a folder with your own evaluations to see yours.")
+        args.path = path
+        args.no_report = True
     """Run it where the evaluations already are."""
     try:
         res = check_mod.run(args.path, incumbent=args.incumbent, candidate=args.candidate,
@@ -616,7 +729,7 @@ def cmd_next(args):
         print("orbit next: %s" % e)
         return 2
     if not res.get("ok"):
-        print(check_mod.format_nothing(res, args.path))
+        print(check_mod.format_nothing(res, args.path, prog="orbit next"))
         return 2
     d = res["next"]
     if args.json:
@@ -741,7 +854,7 @@ def build_parser():
     # Eleven commands at the top level is a wall. The four anyone needs are named;
     # the rest still work and are listed once, below, for the people who want them.
     sub = ap.add_subparsers(dest="cmd",
-                            metavar="{status,cover,check,next,log,judge,skill}")
+                            metavar="{status,cover,body,freeze,check,next,log,judge,skill}")
 
     sk = sub.add_parser("skill", help="print or install the agent skill, so a coding "
                                       "agent knows when to run this")
@@ -798,10 +911,52 @@ def build_parser():
     cv.add_argument("--json", action="store_true")
     cv.set_defaults(fn=cmd_cover)
 
+    bd = sub.add_parser("body", help="which robot can physically do this: reach, payload, "
+                                     "dof and price against spec sheets, and what has "
+                                     "been measured on each body")
+    bd.add_argument("robot", nargs="?", help="a robot id or name for its spec sheet and "
+                                              "its measured cells (default: list them all)")
+    bd.add_argument("--reach", type=float, metavar="MM", help="reach the task needs, mm")
+    bd.add_argument("--payload", type=float, metavar="KG", help="payload the task needs, kg")
+    bd.add_argument("--dof", type=int, help="degrees of freedom the task needs")
+    bd.add_argument("--budget", type=float, metavar="USD", help="most you will pay, USD")
+    bd.add_argument("--class", dest="klass", choices=body_mod.CLASSES,
+                    help="restrict to one class of body")
+    bd.add_argument("--job", choices=[j for j in robomap.JOB_SHAPES if j != "unknown"],
+                    help="the job shape, to show what the map has measured on each body")
+    bd.add_argument("--skill", metavar="RELEASE.JSON",
+                    help="a frozen manifest: compare its trained joint ranges with the "
+                         "recording at PATH, joint by joint")
+    bd.add_argument("--path", default=".", help="with --skill: your dataset (default: here)")
+    bd.add_argument("--json", action="store_true")
+    bd.set_defaults(fn=cmd_body)
+
+    fz = sub.add_parser("freeze", help="pin a checkpoint, its sampling seed and its eval "
+                                       "seeds, so every later comparison is the cheap one")
+    fz.add_argument("--checkpoint", metavar="PATH",
+                    help="a pretrained_model directory or a weights file")
+    fz.add_argument("--dataset", metavar="PATH",
+                    help="the dataset it was trained on; its joint ranges ride along")
+    fz.add_argument("--inference-seed", type=int, default=freeze_mod.DEFAULT_INFERENCE_SEED,
+                    help="seed for action sampling (default %(default)s)")
+    fz.add_argument("--eval-seeds", metavar="START:COUNT", default=None,
+                    help="eval seed sequence (default %d:%d)"
+                         % (freeze_mod.DEFAULT_EVAL_START, freeze_mod.DEFAULT_EVAL_COUNT))
+    fz.add_argument("--record", metavar="FILE",
+                    help="an orbit check record to bind to this checkpoint")
+    fz.add_argument("--out", default="release.json", help="manifest to write (default release.json)")
+    fz.add_argument("--verify", metavar="RELEASE.JSON",
+                    help="re-hash the files a manifest names and say which moved")
+    fz.add_argument("--json", action="store_true")
+    fz.set_defaults(fn=cmd_freeze)
+
     ck = sub.add_parser("check", help="run this where your evaluations already are "
                                       "(start here)")
     ck.add_argument("path", nargs="?", default=".",
                     help="directory to scan (default: the current one)")
+    ck.add_argument("--demo", action="store_true",
+                    help="run on a bundled public self-improvement loop (REVOLVE, "
+                         "arXiv 2609.14633) instead")
     ck.add_argument("--incumbent", help="the policy you run today (default: guessed)")
     ck.add_argument("--candidate", help="the policy you might ship (default: guessed)")
     ck.add_argument("--target-pp", type=float, default=nextstep.TARGET_PP,
@@ -838,7 +993,7 @@ def build_parser():
     nx.add_argument("--json", action="store_true")
     nx.set_defaults(fn=cmd_next)
 
-    rel = sub.add_parser("release", help="the same question as check, from a CSV you "
+    rel = sub.add_parser("release", help=argparse.SUPPRESS, description="the same question as check, from a CSV you "
                                          "name yourself")
     rel.add_argument("log", help="episode-level CSV/TSV: version,skill,episode,success "
                                  "(column names are auto-detected)")
@@ -855,7 +1010,7 @@ def build_parser():
     rel.add_argument("--json", action="store_true")
     rel.set_defaults(fn=cmd_release)
 
-    a = sub.add_parser("audit", help="scan eval outputs for silent defects "
+    a = sub.add_parser("audit", help=argparse.SUPPRESS, description="scan eval outputs for silent defects "
                                      "(exit 0 clean / 1 flags or parse "
                                      "errors / 2 unusable path or no result "
                                      "files)")
@@ -863,7 +1018,7 @@ def build_parser():
     a.add_argument("--json", action="store_true")
     a.set_defaults(fn=cmd_audit)
 
-    c = sub.add_parser("compare", help="compare two eval runs (CRN-paired "
+    c = sub.add_parser("compare", help=argparse.SUPPRESS, description="compare two eval runs (CRN-paired "
                                        "when possible)")
     c.add_argument("runA")
     c.add_argument("runB")
@@ -874,7 +1029,7 @@ def build_parser():
                    help="machine-readable result instead of the text report")
     c.set_defaults(fn=cmd_compare)
 
-    p = sub.add_parser("power", help="MDE / draws-per-arm design rules")
+    p = sub.add_parser("power", help=argparse.SUPPRESS, description="MDE / draws-per-arm design rules")
     p.add_argument("--regime", help="atlas regime: %s"
                    % ", ".join(sorted(atlas.REGIMES)))
     p.add_argument("--sigma-run", type=float)
@@ -884,7 +1039,7 @@ def build_parser():
                    default="fixed-set")
     p.set_defaults(fn=cmd_power)
 
-    r = sub.add_parser("regress", help="CI regression gate "
+    r = sub.add_parser("regress", help=argparse.SUPPRESS, description="CI regression gate "
                                        "(exit 0 ok / 1 regression / 2 invalid "
                                        "inputs / 3 underpowered design)")
     r.add_argument("runA", help="baseline")
@@ -901,12 +1056,12 @@ def build_parser():
                         "instead of the text report")
     r.set_defaults(fn=cmd_regress)
 
-    s = sub.add_parser("selftest", help="verify size/power/unbiasedness on "
+    s = sub.add_parser("selftest", help=argparse.SUPPRESS, description="verify size/power/unbiasedness on "
                                         "synthetic data")
     s.add_argument("--n-rep", type=int, default=600)
     s.set_defaults(fn=cmd_selftest)
 
-    rt = sub.add_parser("route", help="task-conditioned release selection over "
+    rt = sub.add_parser("route", help=argparse.SUPPRESS, description="task-conditioned release selection over "
                                       "candidate checkpoints (build a routed "
                                       "release with abstention; plan a budget)")
     rsub = rt.add_subparsers(dest="route_cmd", required=True)
@@ -945,7 +1100,7 @@ def build_parser():
 QUICKSTART = """
 orbit: which of your jobs did the new policy break, and what to do about it.
 
-  Nothing was found here to check, so here is the whole tool in six lines.
+  Nothing was found here to check, so here is the whole tool in eight lines.
 
     orbit                   run it where your evaluations already are. It finds
                             them (lerobot eval_info.json at any depth, a CSV, a
@@ -958,6 +1113,13 @@ orbit: which of your jobs did the new policy break, and what to do about it.
 
     orbit cover             what the recording is missing: the instruction
                             and workspace combinations never recorded.
+
+    orbit body              which robot can physically do this, from spec
+                            sheets; `orbit body so101` for one robot's sheet
+                            and what has been measured on it.
+
+    orbit freeze            pin a checkpoint, its sampling seed and its eval
+                            seeds, so every later comparison is the cheap one.
 
     orbit next              what to do tomorrow, per job: retrain, collect
                             demonstrations, or run more trials, and how many.

@@ -63,11 +63,52 @@ prediction; say it is the largest empty cell and let them decide.
   or a CSV of trials.
 - Someone about to conclude a policy comparison from a table of success rates.
 
+## Before recommending a robot, or running someone else's skill
+
+```sh
+orbit body --reach 500 --payload 1 --budget 5000 --job pick_place
+orbit body so101                    # one robot's sheet, every figure with its source
+orbit body --skill release.json     # does this frozen skill's trained range cover my arm?
+```
+
+`body` is arithmetic over a sourced database of thirty robots. Quote the
+shortfall ("payload 0.5 kg, short by 2.5 kg") and the source page; never say an
+arm is right or wrong for a task, and say "not published" when the database
+does. The last block is the map: what has been measured for that job shape on
+each body. It is almost always empty, and telling the user that nobody has
+measured it is the correct answer, not a failure of the tool.
+
+## Before comparing anything twice
+
+```sh
+orbit freeze --checkpoint <pretrained_model dir> --dataset <dataset> --out release.json
+orbit freeze --verify release.json
+```
+
+Freezing pins the file hashes, the action-sampling seed and the eval seed
+sequence, so later comparisons are the cheap question (fixed checkpoint under
+common random numbers, about two seeds) instead of the expensive one (about
+sixty retrains). The manifest says what the checkpoint is, never that it works.
+
+## If the user's robot improves itself
+
+A self-improving loop retrains every round, so every round is one draw of the
+training lottery, and its judge is the weakest link (a 1,250-paper survey of
+self-improvement names the evaluator as the bottleneck in every loop). Run
+`orbit judge` on the judge, `orbit freeze` on each round, and `orbit check
+--history` on the chain. `orbit check --demo` shows this on a published loop
+(REVOLVE, arXiv 2609.14633): the +18.5-point average is real on one task and
+inside the noise on three, and no single round's step is callable at 100
+rollouts. When the folder holds successive rounds, `next` says "rounds" and
+"moved", never "copies" and "retrain".
+
 ## The commands
 
 ```sh
 orbit status             # where this robot is, and the one next action
 orbit cover              # what the recording is missing, counted
+orbit body               # which robot can physically do this; what is measured on it
+orbit freeze             # pin a checkpoint and its seeds
 orbit                    # run it where the evaluations already are
 orbit next               # what to do tomorrow, per job
 orbit log --job J --policy P    # record trials at the robot, one keypress each

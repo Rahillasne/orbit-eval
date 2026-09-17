@@ -160,7 +160,7 @@ def load_episodes(meta):
     """
     root = meta.root
     jl = os.path.join(root, "meta", "episodes.jsonl")
-    if os.path.isfile(jl):
+    if os.path.isfile(jl) and any(isinstance(r, dict) for r in _read_jsonl(jl)):
         eps = []
         for r in _read_jsonl(jl):
             if not isinstance(r, dict):
@@ -517,6 +517,8 @@ def format_cover(rep):
                     L.append("    %-12s %s" % (s["name"] if i == 0 else "", line))
         elif ins["template"] and not ins["slots"]:
             L.append("    one instruction: %s" % ins["template"])
+        elif not ins["per_task"]:
+            L.append("    no instruction text is recorded in this dataset")
         else:
             rows = ins["per_task"]
             for r in rows[:MAX_LIST]:

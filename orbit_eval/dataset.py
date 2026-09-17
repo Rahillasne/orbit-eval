@@ -73,6 +73,9 @@ DEMOS = {
     "cover": ("so101_table_cleanup", "youliangtan/so101-table-cleanup",
               "a community SO-101 recording, 80 episodes over four "
               "instructions, metadata only"),
+    "check": ("revolve_loop", "REVOLVE, arXiv 2609.14633, Table II",
+              "a published self-improving loop: four real tasks on a ViperX arm, "
+              "five iterations, 100 rollouts per task per iteration"),
 }
 
 

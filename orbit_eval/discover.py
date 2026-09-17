@@ -464,8 +464,14 @@ def _read_episodes(lines, delim, vc, sc, ec, uc, rc=None):
             reasons)
 
 
+NOT_EVALS = {"info.json", "stats.json", "config.json", "train_config.json",
+             "episodes_stats.json", "release.json", "tasks.json"}
+
+
 def _maybe_eval_json(path):
     """Cheap sniff: does this JSON mention evaluation at all? Only used to explain."""
+    if os.path.basename(path).lower() in NOT_EVALS:
+        return False
     try:
         with open(path) as fh:
             head = fh.read(4096).lower()

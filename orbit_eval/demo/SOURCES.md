@@ -30,3 +30,16 @@ https://huggingface.co/datasets/youliangtan/so101-table-cleanup
   key is unchanged. The Hub file is 176 KB; this one is 116 KB.
 - v2.1 layout, 80 episodes, four instructions of the shape
   "Grab {X} and place into pen holder".
+
+## `revolve_loop`
+
+Table II of *REVOLVE: An Automated Closed-Loop Framework for Evolving Robot
+Manipulation with Minimal Human Intervention* (arXiv 2609.14633, 2026-09-13),
+transcribed by hand on 2026-09-17: four real-world tasks on a ViperX arm, five
+iterations of a self-improving loop, 100 rollouts per task per iteration, one
+policy training per iteration. Success rates only; the paper reports no
+interval, no retrain replicate and no per-episode list, so the rows are
+aggregated counts and `orbit check` treats them as unpaired. Used by
+`orbit check --demo` to show what a loop's own numbers can and cannot resolve.
+The paper's judge accuracy (Table III, 72.0% to 80.5%) is quoted in the README
+and is not bundled.

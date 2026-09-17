@@ -1,0 +1,29 @@
+# Copy this into your own repository. It runs on every pull request that touches
+# evaluation outputs, comments the per-job table, and fails only on a regression
+# that clears your own measurement noise.
+name: policy check
+
+on:
+  pull_request:
+    paths:
+      - "outputs/**"
+      - "evals/**"
+      - "**/eval_info.json"
+      - "**/trials.csv"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  orbit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: Rahillasne/orbit-eval/.github/actions/orbit-check@main
+        with:
+          path: outputs
+          target-pp: "10"

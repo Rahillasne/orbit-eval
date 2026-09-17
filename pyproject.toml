@@ -7,13 +7,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbit-eval"
-version = "0.8.3"
-description = "Honest statistics for robot-policy evaluation: CRN-paired checkpoint comparisons vs retrain-level method comparisons, shipping the measured ORBIT noise atlas."
+version = "0.16.0"
+description = "You have a robot. orbit tells you what to do next, and how you will know it worked: what the recording got wrong, what it never covered, and whether a change survived the noise. Zero dependencies."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [{ name = "ORBIT Research" }]
 dependencies = []
+keywords = [
+    "robotics", "robot-learning", "lerobot", "policy-evaluation", "evaluation",
+    "imitation-learning", "vla", "so-101", "so-100", "statistics",
+    "confidence-interval", "regression-testing", "design-of-experiments",
+    "coverage", "reproducibility",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -31,15 +37,27 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 
+[project.optional-dependencies]
+# v3.0 LeRobot datasets keep the per-episode table as parquet. `orbit cover`
+# reads it through pyarrow when present and says what it needs when not.
+coverage = ["pyarrow>=14"]
+
 [project.urls]
 Homepage = "https://orbiteval.com"
+Source = "https://github.com/Rahillasne/orbit-eval"
+Changelog = "https://github.com/Rahillasne/orbit-eval/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Rahillasne/orbit-eval/issues"
 
 [project.scripts]
+orbit = "orbit_eval.cli:main"
 orbit-eval = "orbit_eval.cli:main"
 orbit-shipgate = "orbit_eval.gate.cli:main"
 
 [tool.setuptools]
 packages = ["orbit_eval", "orbit_eval.gate"]
+
+[tool.setuptools.package-data]
+orbit_eval = ["skills/*.md", "demo/*.md", "demo/*/meta/*"]
 
 [tool.pytest.ini_options]
 markers = [

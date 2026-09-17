@@ -1,17 +1,295 @@
 # orbit-eval
 
-**Measure your sigma once — ~8 replicate retrains — and the gate prices every
-ship decision after that.** Robot-policy success rates move by whole
-percentage points between *identical-data retrains*; a gate that ignores that
-lottery false-shipped 16% of ORBIT's seed-replicate null pairs. orbit-eval is
-the statistical decision layer that prices it: calibrate your cell's
-`sigma_run` one time, feed it to the gate (`--sigma-run` or an atlas regime),
-and every promote/hold verdict after that is priced against measured
-retraining noise instead of eval luck.
+**You have a robot. `orbit` tells you what to do next, and how you will know it
+worked.**
 
-Honest statistics for robot-policy evaluation. A thin, stdlib-only
-pip-installable port of the validated statistics from the ORBIT research
-program, shipping the program's **measured noise atlas** as data.
+```bash
+uvx --from orbit-eval orbit status --demo     # on a public SO-101 dataset, no data needed
+uvx --from orbit-eval orbit status            # on yours: run it where the dataset is
+```
+
+`status` reads a LeRobot dataset's `meta/info.json` and `meta/stats.json`, a
+few kilobytes of plain JSON, and reports where you are (nothing recorded, a
+recording, a checkpoint, a result), what is measurably wrong with the
+recording, and the one thing to do next. On the official SO-101 example it
+finds two joints whose commands were clipped at the calibration bound, which
+is a defect no amount of training fixes. A trial table follows: at the ten
+evaluation episodes LeRobot's own guide suggests, the smallest drop you could
+call real is about 45 points.
+
+```bash
+uvx --from orbit-eval orbit cover --demo      # what the recording never covered
+```
+
+`cover` is factor coverage from design of experiments. It reads the instruction
+text into a template ("Grab {A} and place into pen holder"), counts the
+episodes in every cell, names the cells that hold none, and does the same for
+episode length, for which joints moved in each episode, and for where each
+joint sat. It counts. It never scores a demonstration, and it never says a gap
+caused a failure.
+
+Everything runs on your machine, reads what is already there, and has no
+dependencies. When you have evaluations:
+
+**Run it in the folder your evaluations are already in.**
+
+```bash
+uvx --from orbit-eval orbit check
+```
+
+No account, no upload, no config file, nothing to format first. It walks the
+directory, works out which files are evaluations, which rows belong to the same
+trained policy, and which policy is the one you are already running. Then it
+answers the question you actually have.
+
+```
+  scanning /home/you/robot ...
+
+  found  3 policies x 10 jobs, 100 episodes each (lerobot)
+         outputs/train
+
+  shipping today : smolvla_s0
+  candidate      : smolvla_s2
+
+  REGRESSED     bin_pick        40% ->  22%   -18.0 pp   95% [-30, -5]
+  SUSPECT       shelf_place     51% ->  39%   -12.0 pp   95% [-25, +2]
+  IMPROVED      scan_label      68% ->  92%   +24.0 pp   95% [+13, +34]
+  held          7 jobs
+
+  WHAT THIS RUN COULD NOT SEE
+    At 100 trials the smallest drop this file can call real is about 12 pp.
+    Anything smaller is invisible here, however real it is.
+
+  report  file:///home/you/robot/orbit-report.html
+```
+
+The report is a single self-contained HTML page you can send to someone.
+
+### Start here if your robot is real
+
+Simulated evaluations write themselves. Real ones are a person standing at a cell
+with a clipboard, and that tally is the most expensive data in robotics.
+
+```bash
+orbit log --job pick_bin --policy smolvla_s2 --block cell3
+```
+
+```
+  pick_bin / smolvla_s2 / cell3   trial 8
+  ---------------------------------------
+  5/7 = 71%   95% 36-92%  171 more to call a 10-point drop
+
+  [y] success   [n] failure   [u] undo   [s] skip   [q] done
+```
+
+One keypress per trial. `n` then one more key for why it failed: grasp, place,
+approach, moved, timeout, collision. Every trial is written to disk before the
+next key is read, so a dropped ssh connection costs you the trial you were
+watching and nothing else. Run the same command again tomorrow and it resumes.
+
+`--block` records which robot, cell, day or operator ran the trial, which is what
+later lets you ask whether a regression is site-wide or just cell 3. You cannot
+recover that after the fact.
+
+The file it writes is the file `orbit check` reads. There is no conversion step.
+
+### Then ask what to do about it
+
+```bash
+uvx --from orbit-eval orbit next
+```
+
+`check` says which jobs broke. `next` says what to do tomorrow, and the three
+answers are not interchangeable:
+
+```
+  job                    best  spread  do        why
+  ------------------------------------------------------------------
+  bin_pick                85%      39  retrain   copies range 46% to 85%, 31 pts past
+                                                 the 8-pt noise floor
+  shelf_place             22%       5  collect   best copy only reaches 22%: needs
+                                                 demonstrations, not trials or seeds
+  scan_label              88%       2  -         nothing
+```
+
+A job where every copy is bad needs **demonstrations**. A job where your copies
+disagree by more than sampling explains is the **training lottery** and is bought
+off with retrains plus a per-job pick. A job you cannot yet measure needs
+**trials**, and `next` says how many. Telling these apart is the whole job, and
+it needs the noise floor: how far apart copies of the *same* policy would look
+by chance alone.
+
+### Then: which episodes to watch
+
+A number is not a bug report. `check` also prints the episodes whose outcome
+changed, with the recording of each, old and new:
+
+```
+  WHICH EPISODES TO WATCH
+  13 episodes changed outcome: 9 broke, 4 were fixed.
+
+  libero_goal/9   60% -> 0%   6 broke, 0 fixed
+      episode 0    broke
+         was  .../mine_head_nas10_all/videos/libero_goal_9/eval_episode_0.mp4
+         now  .../mine_head_nas1_all/videos/libero_goal_9/eval_episode_0.mp4
+```
+
+If both policies started episode 0 from the same state and one solved it, that
+episode is a reproducible counterexample and LeRobot already recorded a video of
+it. These are the discordant pairs McNemar has always counted to decide whether
+the drop was real; only one of the two readings had ever been printed.
+
+Add `--crn` when episode k really is the same starting state for every policy
+(the same eval seed). That is the one fact this tool cannot check, so it is
+asserted explicitly and recorded as an assertion. It also enables the paired
+comparison: on one measured example it narrowed an interval from 52 points to 40
+for free.
+
+**It does not tell you why.** A survey of roughly 150 robot verifiers finds that
+credibility falls as availability rises, and the strongest general
+vision-language judge measured across fourteen public sources reaches 0.77
+balanced accuracy, with no model above 0.60 where success turns on fine contact.
+A judge wrong one time in four can order a queue; it cannot supply a label. So
+this orders the queue and leaves the verdict to a person.
+
+### Auditing a loop, not just a release
+
+A policy that retrains itself, or a team that ships every fortnight, is a
+sequence, and a sequence has a failure a pair does not.
+
+```bash
+orbit check --history --crn
+```
+
+```
+  10 rounds, 9 comparisons.
+  0 of 9 rounds broke at least one job: 0% per round, 95% [0, 30].
+
+  CREEPING ROT: insert/2
+    NO single round broke this job. 9 rounds together did.
+
+  END TO END: round00 -> round09, suite +5.8 pp
+    insert/2   85% ->  38%   -46.7 pp
+```
+
+A job losing four points a round sits under the resolution of every single round
+and over it by the end. The suite average went UP the whole time. A pairwise
+check run forever would never once have fired.
+
+It also reports the per-round risk and what it compounds to by round 10, 25 and
+50, carrying the interval of that rate rather than a point, and says plainly that
+counting rounds as independent flatters a loop that trains on its own output. The
+HTML report becomes a dashboard: a trend line per job across rounds, the rounds
+that broke something, the episode worklist, and what to do next.
+
+### In CI, on every pull request
+
+```yaml
+- uses: Rahillasne/orbit-eval/.github/actions/orbit-check@main
+  with:
+    path: outputs
+    target-pp: "10"
+```
+
+It comments one table on the pull request and edits that same comment on every
+push rather than stacking near-identical tables, and it fails the job only when a
+job regressed beyond your own measurement noise. A drop that could be noise is
+reported and does not fail the build, because a check that cries wolf is a check
+somebody disables. Full example in
+[`.github/workflows/example-policy-check.yml`](.github/workflows/example-policy-check.yml).
+
+### What it reads
+
+Evaluations in the wild are messier than any fixture, so this was built against
+real public files rather than invented ones:
+
+| shape | example | paired |
+|---|---|---|
+| `eval_info.json` at any depth | anything `lerobot-eval` writes | yes |
+| one row per trial | what `orbit log` writes | yes |
+| one row per policy with a trial count and successes | `model,episodes,successes` | no |
+| one row per job, one column per policy, plus a count | `axis,n_per_arm,fp16_sr,w4a4_sr` | no |
+| `{"candidates": {name: {job: [1,0,...]}}}` | a matrix you built | yes |
+
+Comment lines before the header are skipped, because researchers write notes at
+the top of their result files. Rates are understood whether they are written as
+0.82 or 82.0. Where trials had to be rebuilt from summary counts the comparison
+is marked unpaired and the intervals stay honest: the individual episodes are
+gone, and pairing them would invent an agreement nobody measured.
+
+When a file looks like an evaluation and cannot be used, it is named along with
+the reason. A near miss you cannot see is how a tool gets abandoned.
+
+If the policies in a directory did not all run the same jobs, the largest group
+that did is compared and the rest are named. One smoke test on a single task no
+longer empties the comparison for everybody else.
+
+### And: what is your success detector costing you?
+
+Every number above sits on a bit that says the robot did the task. In simulation
+that bit is a reward threshold; across 1,257 per-task blocks harvested from
+public repositories, 99% of them are exactly `max_reward >= 1.0`. On a real robot
+it comes from a person or a model watching, and nobody measures how wrong it is.
+
+```bash
+orbit judge labels.csv
+```
+
+Give it episodes carrying both the judge's label and a trusted reference label.
+It prices one against the other, and never labels anything itself.
+
+The point is not that a judge is inaccurate. It is that an inaccurate judge
+**shrinks the difference you are trying to measure, by an exact amount**. With
+sensitivity `se` and specificity `sp`, two policies scored by the same judge show
+
+```
+observed difference = true difference x (se + sp - 1)
+```
+
+That factor is Youden's J. It does not depend on the success rate and it is not
+an approximation, which turns published judge reliability into a price in trials:
+
+| judge | J | a 10-point regression reads as | trials needed |
+|---|--:|--:|--:|
+| perfect | 1.00 | 10.0 points | 1x |
+| best VLM measured across 14 public sources (0.77) | 0.54 | 5.4 points | **3.4x** |
+| VLMs where success turns on fine contact (0.60) | 0.20 | 2.0 points | **25x** |
+| VLMs on contact-rich assembly (0.52) | 0.04 | 0.4 points | **625x** |
+
+It also tests whether the judge errs the *same* way for every policy. Even
+shrinkage is correctable; uneven shrinkage is not, and can invent a difference
+that was never there. That verdict is one decision over many comparisons, so it
+is explicitly corrected for multiplicity: uncorrected it fired on 10-12% of
+even-handed judges, corrected it fires on 5.2% and still catches a genuinely
+uneven judge 98.7% of the time at sixty episodes per policy. Exit code 1 when the
+judge is uneven, so this can gate a pipeline too.
+
+### What it will not do
+
+It will not tell you a job got worse when the drop sits inside your own
+measurement noise. It says `suspect` and prints what the battery could have
+seen. On a fifty-task suite, shipping the best-validation model damaged at least
+one task in 100% of measured draws while the suite average got three times
+steadier: the certifying number stabilises exactly as it stops certifying
+anything.
+
+Detection of your files is a heuristic and is printed so you can override it
+with `--incumbent` and `--candidate`. The decision is not a heuristic: it is
+stdlib arithmetic, and the signed record reproduces without this tool.
+
+It will not predict. A predecessor of this package was retired for claiming it
+could tell training outcomes from data, and that retraction draws a line every
+command keeps to:
+
+| it may say | it never says | because |
+|---|---|---|
+| "no episode has the object on the left" | "this demonstration is low quality, drop it" | coverage is counting; scoring a demonstration is the retracted claim |
+| "setups like yours ran at sigma 6 points, so 63 trials" | "this model will work for your task" | variance is a property of the measurement; success is not |
+| "at 10 trials the smallest callable drop is 45 points" | "your policy got worse" | a drop inside the noise is not a finding |
+
+Every number it prints traces to a file, a spec sheet, or an arithmetic step.
+
+---
 
 ## The one distinction that matters
 

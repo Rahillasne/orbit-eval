@@ -30,7 +30,7 @@ CRN pairing cannot rescue (b): pairing cancels eval-draw noise only, while
 sigma_run and sigma_set live in training.
 """
 
-__version__ = "0.8.3"
+__version__ = "0.16.0"
 
 from . import atlas, power, stats          # noqa: F401
 from .io import EvalRun, parse_file        # noqa: F401

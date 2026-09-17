@@ -31,7 +31,14 @@ import os
 import sys
 
 from . import __version__, atlas, audit, io, power, route, stats
+from . import check as check_mod
+from . import cover as cover_mod
+from . import dataset as dataset_mod
+from . import judge as judge_mod
+from . import logtrials
+from . import nextstep
 from . import release as release_mod
+from . import status as status_mod
 
 
 # ------------------------------------------------------------------ audit
@@ -512,19 +519,327 @@ def cmd_route_plan(args):
     return 0
 
 
+def cmd_check(args):
+    """Run it where the evaluations already are."""
+    try:
+        res = check_mod.run(args.path, incumbent=args.incumbent, candidate=args.candidate,
+                            target_pp=args.target_pp, drop_pp=args.drop_pp,
+                            min_episodes=args.min_episodes, crn=args.crn,
+                            want_history=True if args.history else None)
+    except ValueError as e:
+        print("orbit check: %s" % e)
+        return 2
+    if args.json:
+        print(json.dumps(res, indent=2, default=str))
+    else:
+        print("\n  scanning %s ..." % os.path.abspath(args.path))
+        print(check_mod.format_check(res, args.path, why=args.why))
+    if not res.get("ok"):
+        return 2
+    rec = check_mod.signed(res, ["check", args.path])
+    if args.out:
+        with open(args.out, "w") as fh:
+            json.dump(rec, fh, indent=2)
+    sig = rec.get("record_sha256") or rec.get("meta", {}).get("sha256")
+    if args.markdown:
+        try:
+            with open(args.markdown, "w") as fh:
+                fh.write(check_mod.markdown_report(res, sig=sig) + "\n")
+        except OSError as e:
+            print("  (could not write markdown: %s)" % e)
+    if not args.no_report:
+        path = args.report or os.path.join(os.path.abspath(args.path), "orbit-report.html")
+        try:
+            check_mod.write_report(res, path, sig=sig, open_it=not args.no_open)
+            if not args.json:
+                print("\n  report  file://%s" % path)
+                if args.out:
+                    print("  record  %s" % args.out)
+        except OSError as e:
+            print("  (could not write the report: %s)" % e)
+    c = res.get("check")
+    return 1 if (c and c["n_regressed"]) else 0
+
+
+def _demo_header(command):
+    path, hub_id, blurb = dataset_mod.demo_path(command)
+    print()
+    print("  DEMO  %s" % hub_id)
+    print("        %s, bundled with this package (Apache-2.0)." % blurb)
+    print("        Run `orbit %s` in a folder with your own dataset to see yours."
+          % command)
+    return path
+
+
+def cmd_status(args):
+    """Where this robot is, and the one thing to do next."""
+    demo = getattr(args, "demo", False)
+    path = _demo_header("status") if demo and not args.json else (
+        dataset_mod.demo_path("status")[0] if demo else args.path)
+    st = status_mod.scan(path, target_pp=args.target_pp)
+    if args.json:
+        print(json.dumps(st.as_dict(), indent=2, default=str))
+    else:
+        print(status_mod.format_status(st, budget=demo))
+    if demo:
+        # The demo's job is to show the output. Its exit code is not a verdict
+        # on anybody's robot, so it does not carry one.
+        return 0
+    return 1 if st.blocking else 0
+
+
+def cmd_cover(args):
+    """What the recording is missing: the factor combinations never recorded."""
+    demo = getattr(args, "demo", False)
+    path = _demo_header("cover") if demo and not args.json else (
+        dataset_mod.demo_path("cover")[0] if demo else args.path)
+    try:
+        rep = cover_mod.scan(path)
+    except ValueError as e:
+        print("orbit cover: %s" % e)
+        print("It reads a LeRobot dataset: meta/info.json plus the per-episode table "
+              "(meta/episodes.jsonl in v2.x, meta/episodes/*.parquet in v3.0).")
+        return 2
+    if args.json:
+        print(json.dumps(rep, indent=2, default=str))
+    else:
+        print(cover_mod.format_cover(rep))
+    return 2 if rep.get("needs") else 0
+
+
+def cmd_next(args):
+    """What to do tomorrow, per job."""
+    try:
+        res = check_mod.run(args.path, incumbent=args.incumbent, candidate=args.candidate,
+                            target_pp=args.target_pp)
+    except ValueError as e:
+        print("orbit next: %s" % e)
+        return 2
+    if not res.get("ok"):
+        print(check_mod.format_nothing(res, args.path))
+        return 2
+    d = res["next"]
+    if args.json:
+        print(json.dumps(d, indent=2, default=str))
+    else:
+        print()
+        print(nextstep.format_next(d))
+    return 0
+
+
+def cmd_log(args):
+    """Stand at the robot and press one key per trial."""
+    s = logtrials.Session(args.out, args.policy, args.job, block=args.block or "")
+    if s.n:
+        print("\n  resuming: %d trial%s already recorded for %s / %s"
+              % (s.n, "" if s.n == 1 else "s", args.job, args.policy))
+    try:
+        logtrials.loop(s, target_pp=args.target_pp)
+    except KeyboardInterrupt:
+        print("\n" + logtrials.summary(s, args.target_pp))
+    return 0
+
+
+def cmd_quickstart(args=None):
+    print(QUICKSTART)
+    return 0
+
+
+def cmd_judge(args):
+    """Price a success detector against a reference."""
+    try:
+        recs = judge_mod.load(args.labels)
+    except (OSError, ValueError) as e:
+        print("orbit judge: %s" % e)
+        return 2
+    v = judge_mod.validate(recs, target_pp=args.target_pp)
+    if args.json:
+        print(json.dumps(v, indent=2))
+    else:
+        print()
+        print(judge_mod.format_judge(v))
+    if args.out:
+        with open(args.out, "w") as fh:
+            json.dump(v, fh, indent=2)
+    # 1 when the judge errs differently depending on the policy, which is the one
+    # failure that cannot be corrected for.
+    return 1 if v["differential"]["differential"] else 0
+
+
+AGENT_SKILL_DIRS = [
+    ("Claude Code", os.path.join("~", ".claude", "skills")),
+    ("Codex", os.path.join("~", ".codex", "skills")),
+    ("OpenCode", os.path.join("~", ".opencode", "skills")),
+    ("Cursor", os.path.join("~", ".cursor", "skills")),
+    ("generic agents", os.path.join("~", ".agents", "skills")),
+]
+
+
+def _skill_text():
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "skills", "SKILL.md")) as fh:
+        return fh.read()
+
+
+def cmd_skill(args):
+    """Print the agent skill, or install it where a coding agent will find it.
+
+    Robotics engineers increasingly drive their work through a coding agent. An
+    agent that has never heard of this tool will answer "did my checkpoint get
+    worse" by averaging two success rates, which is the exact mistake the tool
+    exists to prevent. Installing the skill is how the right answer reaches
+    somebody who never went looking for it.
+    """
+    text = _skill_text()
+    if not args.install:
+        print(text)
+        return 0
+    wrote, skipped = [], []
+    for name, d in AGENT_SKILL_DIRS:
+        base = os.path.expanduser(d)
+        if not (os.path.isdir(base) or args.all):
+            skipped.append(name)
+            continue
+        dest = os.path.join(base, "orbit-eval")
+        try:
+            os.makedirs(dest, exist_ok=True)
+            with open(os.path.join(dest, "SKILL.md"), "w") as fh:
+                fh.write(text)
+            wrote.append((name, os.path.join(dest, "SKILL.md")))
+        except OSError as e:
+            print("  could not write %s: %s" % (dest, e))
+    if not wrote:
+        print("No agent skills directory found. Looked for:")
+        for name, d in AGENT_SKILL_DIRS:
+            print("  %-16s %s" % (name, d))
+        print("\nRun with --all to create them anyway, or `orbit skill` to print")
+        print("the skill and paste it wherever your agent reads skills from.")
+        return 1
+    for name, path in wrote:
+        print("  installed for %-14s %s" % (name, path))
+    if skipped:
+        print("  (not installed, no directory: %s)" % ", ".join(skipped))
+    print("\nYour agent will pick it up on its next session. Ask it "
+          "\"did my new checkpoint get worse?\" in a directory with evaluations.")
+    return 0
+
+
 # ------------------------------------------------------------------ parser
 
 def build_parser():
     ap = argparse.ArgumentParser(
-        prog="orbit-eval",
-        description="Honest statistics for robot-policy evaluation "
-                    "(ships the measured ORBIT noise atlas).")
+        prog="orbit",
+        description="Which of your jobs did the new policy break, and what to do "
+                    "about it. Run `orbit` on its own in the directory your "
+                    "evaluations are already in.",
+        epilog="also: release (the same question from a CSV you name), compare, "
+               "audit, power, regress, route, selftest. `orbit <command> --help` "
+               "for any of them.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version",
                     version="orbit-eval %s" % __version__)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    # Eleven commands at the top level is a wall. The four anyone needs are named;
+    # the rest still work and are listed once, below, for the people who want them.
+    sub = ap.add_subparsers(dest="cmd",
+                            metavar="{status,cover,check,next,log,judge,skill}")
 
-    rel = sub.add_parser("release", help="which of your skills did the new model "
-                                         "break? (start here)")
+    sk = sub.add_parser("skill", help="print or install the agent skill, so a coding "
+                                      "agent knows when to run this")
+    sk.add_argument("--install", action="store_true",
+                    help="write it into every agent skills directory that exists")
+    sk.add_argument("--all", action="store_true",
+                    help="create the directories too, not just the ones present")
+    sk.set_defaults(fn=cmd_skill)
+
+    jg = sub.add_parser("judge", help="price your success detector: what does judging "
+                                      "by model or by eye cost you?")
+    jg.add_argument("labels", help="CSV with one row per episode carrying both the "
+                                   "judge's label and a reference label")
+    jg.add_argument("--target-pp", type=float, default=10.0,
+                    help="the size of regression you care about (default 10.0)")
+    jg.add_argument("--out", help="write the result as JSON")
+    jg.add_argument("--json", action="store_true")
+    jg.set_defaults(fn=cmd_judge)
+
+    lg = sub.add_parser("log", help="record trials at the robot, one keypress each")
+    lg.add_argument("--job", required=True, help="the named job being run")
+    lg.add_argument("--policy", required=True, help="which trained policy is in the robot")
+    lg.add_argument("--block", help="robot, cell, day or operator, so a later check can "
+                                    "ask whether a regression is site-wide or local")
+    lg.add_argument("--out", default="trials.csv", help="CSV to append to (default trials.csv)")
+    lg.add_argument("--target-pp", type=float, default=nextstep.TARGET_PP,
+                    help="the drop you want to be able to see (default 10.0)")
+    lg.set_defaults(fn=cmd_log)
+
+    stt = sub.add_parser("status", help="where this robot is and the one thing "
+                                         "to do next: what the recording got "
+                                         "wrong, and what a battery of trials "
+                                         "can actually resolve")
+    stt.add_argument("path", nargs="?", default=".",
+                     help="a LeRobot dataset, a run directory, or the folder "
+                          "holding both (default: here)")
+    stt.add_argument("--target-pp", type=float, default=nextstep.TARGET_PP,
+                     help="the drop you want to be able to see, in points "
+                          "(default: %(default)s)")
+    stt.add_argument("--demo", action="store_true",
+                     help="run on a bundled public SO-101 dataset instead, so "
+                          "there is something to look at before you have data")
+    stt.add_argument("--json", action="store_true")
+    stt.set_defaults(fn=cmd_status)
+
+    cv = sub.add_parser("cover", help="what the recording is missing: the "
+                                      "instruction and workspace combinations "
+                                      "that were never recorded, counted, never "
+                                      "scored")
+    cv.add_argument("path", nargs="?", default=".",
+                    help="a LeRobot dataset, or the folder holding one (default: here)")
+    cv.add_argument("--demo", action="store_true",
+                    help="run on a bundled public SO-101 dataset instead")
+    cv.add_argument("--json", action="store_true")
+    cv.set_defaults(fn=cmd_cover)
+
+    ck = sub.add_parser("check", help="run this where your evaluations already are "
+                                      "(start here)")
+    ck.add_argument("path", nargs="?", default=".",
+                    help="directory to scan (default: the current one)")
+    ck.add_argument("--incumbent", help="the policy you run today (default: guessed)")
+    ck.add_argument("--candidate", help="the policy you might ship (default: guessed)")
+    ck.add_argument("--target-pp", type=float, default=nextstep.TARGET_PP,
+                    help="the drop you want to be able to see (default 10.0)")
+    ck.add_argument("--drop-pp", type=float, default=release_mod.DROP_PP,
+                    help="a job must fall at least this far to count (default 5.0)")
+    ck.add_argument("--min-episodes", type=int, default=release_mod.MIN_EPISODES)
+    ck.add_argument("--report", help="where to write the HTML report")
+    ck.add_argument("--no-report", action="store_true")
+    ck.add_argument("--no-open", action="store_true",
+                    help="write the report but do not open a browser")
+    ck.add_argument("--why", action="store_true",
+                    help="the long form: every caveat, what the battery could not see, "
+                         "the full round-by-round audit and the episode worklist")
+    ck.add_argument("--history", action="store_true",
+                    help="force the round-by-round audit (it runs automatically once "
+                         "three or more rounds are present)")
+    ck.add_argument("--crn", action="store_true",
+                    help="assert that episode k is the same starting state for every "
+                         "policy (same eval seed). Enables the paired comparison and "
+                         "makes the episode worklist a counterexample rather than a lead")
+    ck.add_argument("--markdown", help="write the result as markdown, for a PR comment")
+    ck.add_argument("--out", help="write the signed record (JSON)")
+    ck.add_argument("--json", action="store_true")
+    ck.set_defaults(fn=cmd_check)
+
+    nx = sub.add_parser("next", help="what to do tomorrow, per job: retrain, collect "
+                                     "or measure")
+    nx.add_argument("path", nargs="?", default=".")
+    nx.add_argument("--incumbent")
+    nx.add_argument("--candidate")
+    nx.add_argument("--target-pp", type=float, default=nextstep.TARGET_PP,
+                    help="the drop you want to be able to see (default 10.0)")
+    nx.add_argument("--json", action="store_true")
+    nx.set_defaults(fn=cmd_next)
+
+    rel = sub.add_parser("release", help="the same question as check, from a CSV you "
+                                         "name yourself")
     rel.add_argument("log", help="episode-level CSV/TSV: version,skill,episode,success "
                                  "(column names are auto-detected)")
     rel.add_argument("--incumbent", help="the version you run now (default: second newest)")
@@ -627,8 +942,63 @@ def build_parser():
     return ap
 
 
+QUICKSTART = """
+orbit: which of your jobs did the new policy break, and what to do about it.
+
+  Nothing was found here to check, so here is the whole tool in six lines.
+
+    orbit                   run it where your evaluations already are. It finds
+                            them (lerobot eval_info.json at any depth, a CSV, a
+                            JSON matrix), works out which policy you ship today,
+                            and answers per job. --why for every caveat.
+
+    orbit status            where this robot is: what the recording got
+                            wrong, and what a battery of trials can resolve.
+                            --demo shows it on a public SO-101 dataset.
+
+    orbit cover             what the recording is missing: the instruction
+                            and workspace combinations never recorded.
+
+    orbit next              what to do tomorrow, per job: retrain, collect
+                            demonstrations, or run more trials, and how many.
+
+    orbit log --job J --policy P
+                            standing at the robot. One keypress per trial.
+
+    orbit judge labels.csv  what is your success detector costing you?
+
+  Everything runs on your machine. Nothing is uploaded and there is no account.
+"""
+
+
+class _Bare(object):
+    """Defaults for a bare `orbit`, which runs a check here."""
+    path = "."
+    incumbent = candidate = report = out = markdown = None
+    target_pp = nextstep.TARGET_PP
+    drop_pp = release_mod.DROP_PP
+    min_episodes = release_mod.MIN_EPISODES
+    crn = history = why = json = no_report = False
+    no_open = True
+
+
 def main(argv=None):
+    if not (argv if argv is not None else __import__("sys").argv[1:]):
+        # `orbit` on its own answers the question here, the way `git status` does.
+        # Printing a menu instead wastes the one interaction a newcomer gives you.
+        if check_mod.discover.scan(".")[:1]:
+            return cmd_check(_Bare())
+        # No evaluation here yet. Somebody standing in a dataset or a run
+        # directory still asked a real question, so answer that one instead of
+        # printing a menu.
+        st = status_mod.scan(".")
+        if st.dataset is not None or st.policies:
+            print(status_mod.format_status(st))
+            return 1 if st.blocking else 0
+        return cmd_quickstart()
     args = build_parser().parse_args(argv)
+    if not getattr(args, "fn", None):
+        return cmd_quickstart()
     return args.fn(args)
 
 

@@ -339,7 +339,7 @@ def format_check(c, meta=None):
              % (c["n_skills"], "" if c["n_skills"] == 1 else "s"))
     L.append("    even when nothing changed. The per-skill rule is a one-sided 95% interval")
     L.append("    ANDed with a %.0f pp floor, so the per-skill false-flag rate is at most" % DROP_PP)
-    L.append("    2.5%% and in practice far lower — the floor does most of the work, and it")
+    L.append("    2.5% and in practice far lower — the floor does most of the work, and it")
     L.append("    falls, not rises, as you add episodes. This tool states that rather than")
     L.append("    silently correcting for it, because on the damage objective a multiplicity")
     L.append("    correction measurably removed the flags that were doing the work.")

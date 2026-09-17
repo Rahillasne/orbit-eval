@@ -270,3 +270,56 @@ class TestPowerCLI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDemoAndCover(unittest.TestCase):
+    """`--demo` runs on bundled public metadata, so a cold machine has something to look at."""
+
+    def test_status_demo_shows_the_clipped_bounds_and_exits_zero(self):
+        code, out = _run(["status", "--demo"])
+        self.assertEqual(code, 0)
+        self.assertIn("DEMO", out)
+        self.assertIn("svla_so101_pickplace", out)
+        self.assertIn("shoulder_lift.pos", out)
+        self.assertIn("elbow_flex.pos", out)
+        self.assertIn("WHAT A BATTERY BUYS", out)
+        self.assertIn("ALSO WORTH KNOWING", out)
+
+    def test_status_demo_json_is_the_same_scan(self):
+        code, out = _run(["status", "--demo", "--json"])
+        self.assertEqual(code, 0)
+        d = json.loads(out)
+        self.assertEqual(d["dataset"]["n_episodes"], 50)
+        self.assertEqual(sorted(f["joint"] for f in d["findings"]
+                                if f["code"] == "saturated_action"),
+                         ["elbow_flex.pos", "shoulder_lift.pos"])
+
+    def test_cover_demo_reads_the_v21_table_with_no_dependency(self):
+        code, out = _run(["cover", "--demo"])
+        self.assertEqual(code, 0)
+        self.assertIn("Grab {A} and place into pen holder", out)
+        self.assertIn("THE LARGEST GAP", out)
+        self.assertIn("never scores a demonstration", out)
+
+    def test_cover_json_round_trips(self):
+        code, out = _run(["cover", "--demo", "--json"])
+        self.assertEqual(code, 0)
+        d = json.loads(out)
+        self.assertEqual(d["n_episodes"], 80)
+        self.assertEqual(d["instructions"]["template"], "Grab {A} and place into pen holder")
+
+    def test_cover_on_an_empty_directory_says_what_it_reads(self):
+        tmp = tempfile.mkdtemp(prefix="orbit_eval_cover_")
+        try:
+            code, out = _run(["cover", tmp])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertEqual(code, 2)
+        self.assertIn("meta/info.json", out)
+
+    def test_status_lists_the_other_commands_without_a_menu(self):
+        code, out = _run(["status", "--demo"])
+        for cmd in ("orbit cover", "orbit check", "orbit next", "orbit log"):
+            self.assertIn(cmd, out)
+        self.assertNotIn("orbit body", out)
+        self.assertNotIn("orbit freeze", out)
